@@ -23,9 +23,10 @@ PY3 = sys.version_info >= (3, 0)
 
 if PY3:
     from urllib.request import urlopen
+    from urllib.error import URLError
     raw_input = input
 else:  # Python 2
-    from urllib2 import urlopen
+    from urllib2 import urlopen, URLError
     raw_input = raw_input  # noqa
 
 # Syntactic sugar for "sudo" command in UNIX / Linux
@@ -1000,8 +1001,10 @@ def get_file_by_url(url):
     try:
         f = urlopen(url, timeout=URL_TIMEOUT_SECONDS)
         return f.read().decode("UTF-8")
-    except Exception:
-        print("Problem getting file: ", url)
+    except socket.timeout as exc:
+        print("Timed out getting file: ", url, exc)
+    except URLError as exc:
+        print("Problem getting file: ", url, exc)
 
 
 def write_data(f, data):

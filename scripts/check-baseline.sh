@@ -10,5 +10,7 @@ fi
 
 grep -Fq "URL_TIMEOUT_SECONDS = 10" "$ROOT_DIR/updateFile.py"
 grep -Fq "urlopen(url, timeout=URL_TIMEOUT_SECONDS)" "$ROOT_DIR/updateFile.py"
+grep -Fq "except socket.timeout as exc" "$ROOT_DIR/updateFile.py"
+grep -Fq "except URLError as exc" "$ROOT_DIR/updateFile.py"
 
 printf '%s\n' "hosts urlopen timeout baseline checks passed."
