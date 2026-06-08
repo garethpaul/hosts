@@ -32,6 +32,9 @@ Helpful reports include:
 - Review found shell execution, subprocess, or dynamic evaluation surfaces; changes in those areas should receive security-focused review before merge.
 - Review found infrastructure, deployment, proxy, or cloud configuration; changes in those areas should receive security-focused review before merge.
 - No primary dependency manifest was detected in the repository root. If dependencies are added later, include a manifest and prefer reproducible installation instructions.
+- Hosts false positives can block important services, updates, account recovery, payments, or safety-critical communication. Reports about overbroad domains should include the affected domain, source metadata when known, and the user impact.
+- `updateFile.py` can fetch remote source lists and can replace the local hosts file through privileged `sudo` operations when replacement options are used. Treat changes to source URLs, source metadata, subprocess calls, backup behavior, and DNS flush logic as security-sensitive.
+- `make check` runs the static baseline for hosts syntax, generated counts, duplicate scope, JSON metadata, and Python updater syntax without network access or local hosts replacement.
 
 ## Service and API Notes
 

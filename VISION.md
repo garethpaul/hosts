@@ -21,11 +21,11 @@ Priority:
 - Keep generated hosts data and README metadata aligned
 - Avoid silently adding sources with unclear ownership or issue paths
 - Treat false positives as real user-impacting defects
+- Keep `scripts/check-baseline.py` passing for hosts syntax, generated counts,
+  duplicate scope, JSON metadata, and updater syntax
 
 Next priorities:
 
-- Document update commands and generated-file ownership
-- Add validation for malformed hosts entries and duplicate handling
 - Track source freshness, availability, and issue URLs
 - Add clear guidance for reporting false positives or source-level problems
 
@@ -48,6 +48,11 @@ clear rollback paths.
 
 Do not add sources that require private credentials or collect user browsing
 behavior.
+
+Current baseline: `make check` runs `scripts/check-baseline.py`, which validates
+the checked-in hosts snapshot, metadata JSON, duplicate handling, generated rule
+count, and legacy updater syntax without fetching remote source lists or
+replacing the local `/etc/hosts` file.
 
 ## What We Will Not Merge (For Now)
 

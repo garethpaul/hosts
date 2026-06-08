@@ -11,15 +11,21 @@ This README is based on the checked-in source, manifests, scripts, and repositor
 
 ## Repository Contents
 
+- `CHANGES.md` - concise history of maintenance changes
+- `Makefile` - local verification entry point
 - `README.md` - project overview and local usage notes
 - `SECURITY.md` - security reporting and disclosure guidance
 - `VISION.md` - project direction and maintenance guardrails
+- `hosts` - generated hosts-file blocklist snapshot
+- `readmeData.json` - source and variant metadata produced by the updater
+- `scripts/check-baseline.py` - static hosts-file and updater verifier
+- `updateFile.py` - legacy hosts aggregation/update tooling
 
 Additional scan context:
 
 - Source directories: no top-level source directories detected
-- Dependency and build manifests: none detected
-- Entry points or build surfaces: none detected
+- Dependency and build manifests: readmeData.json
+- Entry points or build surfaces: `make check`, `python3 updateFile.py --help`
 - Test-looking files: no obvious test files detected
 
 ## Getting Started
@@ -27,23 +33,34 @@ Additional scan context:
 ### Prerequisites
 
 - Git
+- Python 3 for local static verification
+- Python 2.7 or Python 3 for the legacy updater, depending on the environment being revived
 
 ### Setup
 
 ```bash
 git clone https://github.com/garethpaul/hosts.git
 cd hosts
+make check
 ```
 
-The setup commands above are derived from repository files. Legacy mobile, Python, or JavaScript samples may require older SDKs or package versions than a modern workstation uses by default.
+The checked-in `hosts` file is a generated snapshot. The updater references source and extension folders that are not present in this snapshot, so `make check` validates the current artifact without fetching or regenerating source data.
 
 ## Running or Using the Project
 
-- No single runtime entry point was identified. Start by reading the source files and manifests listed above.
+- Read or consume the checked-in `hosts` file as the generated blocklist artifact.
+- Run `python3 updateFile.py --help` to inspect legacy update options.
+- Do not run replacement actions against `/etc/hosts` unless you understand the local impact and have a rollback copy.
 
 ## Testing and Verification
 
-- No dedicated automated test command was identified from the checked-in files. Verify changes by running the relevant build or manually exercising the sample.
+Run the static baseline:
+
+```bash
+make check
+```
+
+The baseline runs `scripts/check-baseline.py`, validates `readmeData.json`, parses the README SVG, checks `updateFile.py` syntax without fetching remote lists, verifies generated hosts-line syntax and counts, and limits duplicates to known static localhost aliases.
 
 When the required SDK or runtime is unavailable, use static checks and source review first, then verify on a machine that has the matching platform toolchain.
 
@@ -58,11 +75,14 @@ When the required SDK or runtime is unavailable, use static checks and source re
 - Review changes touching file, media, JSON, XML, CSV, OCR, or data parsing; examples from the scan include updateFile.py.
 - Review changes touching shell execution, subprocess, or dynamic evaluation; examples from the scan include updateFile.py.
 - Review changes touching infrastructure, proxy, cloud, or deployment configuration; examples from the scan include readmeData.json.
+- Treat false positives as security and reliability issues: an overbroad entry can block account recovery, updates, payments, or other important services.
+- `updateFile.py --replace` and DNS flush behavior can affect the local machine's `/etc/hosts`; review generated output and keep backups before privileged replacement.
 
 ## Maintenance Notes
 
 - See `SECURITY.md` for vulnerability reporting and safe research guidance.
 - See `VISION.md` for project direction and contribution guardrails.
+- Run `make check` before pushing changes to `hosts`, `readmeData.json`, updater code, or source metadata.
 
 ## Contributing
 

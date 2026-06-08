@@ -23,9 +23,11 @@ PY3 = sys.version_info >= (3, 0)
 
 if PY3:
     from urllib.request import urlopen
+    from urllib.parse import urlparse
     raw_input = input
 else:  # Python 2
     from urllib2 import urlopen
+    from urlparse import urlparse
     raw_input = raw_input  # noqa
 
 # Syntactic sugar for "sudo" command in UNIX / Linux
@@ -66,7 +68,7 @@ def get_defaults():
         "readmedata": {},
         "readmedatafilename": path_join_robust(BASEDIR_PATH,
                                                "readmeData.json"),
-        "exclusionpattern": "([a-zA-Z\d-]+\.){0,}",
+        "exclusionpattern": r"([a-zA-Z\d-]+\.){0,}",
         "exclusionregexs": [],
         "exclusions": [],
         "commonexclusions": ["hulu.com"],
@@ -658,7 +660,7 @@ def remove_dups_and_excl(merge_file, exclusion_regexes):
             keep_domain_comments=settings["keepdomaincomments"])
 
         for exclude in exclusions:
-            if re.search('[\s\.]' + re.escape(exclude) + '\s', line):
+            if re.search(r'[\s\.]' + re.escape(exclude) + r'\s', line):
                 write_line = False
                 break
 
@@ -847,7 +849,7 @@ def update_readme_data(readme_file, **readme_updates):
 
 
 def move_hosts_file_into_place(final_file):
-    """
+    r"""
     Move the newly-created hosts file into its correct location on the OS.
 
     For UNIX systems, the hosts file is "etc/hosts." On Windows, it's
@@ -874,7 +876,7 @@ def move_hosts_file_into_place(final_file):
         print("Automatically moving the hosts file "
               "in place is not yet supported.")
         print("Please move the generated file to "
-              "%SystemRoot%\system32\drivers\etc\hosts")
+              r"%SystemRoot%\system32\drivers\etc\hosts")
 
 
 def flush_dns_cache():
@@ -997,10 +999,13 @@ def get_file_by_url(url):
     """
 
     try:
-        f = urlopen(url)
+        parsed_url = urlparse(url)
+        if parsed_url.scheme not in ("http", "https"):
+            raise ValueError("unsupported source URL scheme: " + url)
+        f = urlopen(url, timeout=30)
         return f.read().decode("UTF-8")
-    except Exception:
-        print("Problem getting file: ", url)
+    except Exception as error:
+        print("Problem getting file: {0} ({1})".format(url, error))
 
 
 def write_data(f, data):
@@ -1102,7 +1107,7 @@ def is_valid_domain_format(domain):
         print("You didn't enter a domain. Try again.")
         return False
 
-    domain_regex = re.compile("www\d{0,3}[.]|https?")
+    domain_regex = re.compile(r"www\d{0,3}[.]|https?")
 
     if domain_regex.match(domain):
         print("The domain " + domain +
