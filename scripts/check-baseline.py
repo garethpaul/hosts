@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import ast
 import json
 import re
-import subprocess
-import sys
+import warnings
 import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
 
@@ -39,15 +39,14 @@ def load_json(relative_path, failures):
 
 
 def check_python_compile(failures):
-    result = subprocess.run(
-        [sys.executable, "-W", "error::SyntaxWarning", "-m", "py_compile", "updateFile.py"],
-        cwd=str(ROOT),
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    if result.returncode != 0:
-        failures.append("updateFile.py must compile without SyntaxWarning:\n" + result.stderr.strip())
+    source = read("updateFile.py")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", SyntaxWarning)
+            compile(source, str(ROOT / "updateFile.py"), "exec")
+        ast.parse(source, filename=str(ROOT / "updateFile.py"))
+    except Exception as error:
+        failures.append(f"updateFile.py must compile without SyntaxWarning: {error}")
 
 
 def check_hosts_file(failures):
