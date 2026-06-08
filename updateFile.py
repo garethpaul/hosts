@@ -33,6 +33,7 @@ SUDO = "/usr/bin/sudo"
 
 # Project Settings
 BASEDIR_PATH = os.path.dirname(os.path.realpath(__file__))
+URL_TIMEOUT_SECONDS = 10
 
 
 def get_defaults():
@@ -997,7 +998,7 @@ def get_file_by_url(url):
     """
 
     try:
-        f = urlopen(url)
+        f = urlopen(url, timeout=URL_TIMEOUT_SECONDS)
         return f.read().decode("UTF-8")
     except Exception:
         print("Problem getting file: ", url)
