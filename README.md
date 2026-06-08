@@ -1,5 +1,8 @@
 # hosts
 
+<!-- README-OVERVIEW-IMAGE -->
+![Project overview](docs/readme-overview.svg)
+
 ## Overview
 
 `garethpaul/hosts` is a public sample, documentation, or utility project. Blocking Ads and Distractions
@@ -70,4 +73,3 @@ Keep changes small and tied to the project that is already present in this repos
 Prior README summary:
 
 > hosts <!-- README-OVERVIEW-IMAGE -->
-
