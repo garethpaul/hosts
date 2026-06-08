@@ -1,5 +1,8 @@
 ## Hosts Vision
 
+This document explains the current state and direction of the project.
+Project overview and developer docs: [`README.md`](README.md)
+
 Hosts is a blocklist project for ads, distractions, tracking, malware, and other
 unwanted domains using generated hosts data from multiple third-party sources.
 
