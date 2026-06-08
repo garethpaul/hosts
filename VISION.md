@@ -48,3 +48,6 @@ behavior.
 - Generated data updates without source metadata review
 - Tracking or telemetry about user browsing
 - Broad category changes without false-positive consideration
+
+This list is a roadmap guardrail, not a permanent rule.
+Strong user demand and strong technical rationale can change it.
