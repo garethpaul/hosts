@@ -50,6 +50,7 @@ The checked-in `hosts` file is a generated snapshot. The updater references sour
 
 - Read or consume the checked-in `hosts` file as the generated blocklist artifact.
 - Run `python3 updateFile.py --help` to inspect legacy update options.
+- Custom exclusions are escaped before regex compilation so domain dots are matched literally.
 - Do not run replacement actions against `/etc/hosts` unless you understand the local impact and have a rollback copy.
 
 ## Testing and Verification

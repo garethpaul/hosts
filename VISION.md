@@ -22,7 +22,7 @@ Priority:
 - Avoid silently adding sources with unclear ownership or issue paths
 - Treat false positives as real user-impacting defects
 - Keep `scripts/check-baseline.py` passing for hosts syntax, generated counts,
-  duplicate scope, JSON metadata, and updater syntax
+  duplicate scope, JSON metadata, updater syntax, and custom exclusion escaping
 
 Next priorities:
 
