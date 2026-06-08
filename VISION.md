@@ -35,6 +35,11 @@ Contribution rules:
 
 ## Security And Reliability
 
+Canonical security policy and reporting:
+
+- [`SECURITY.md`](SECURITY.md)
+
+
 Hosts files can block important services or fail to block harmful domains if
 source data is wrong. Changes should prioritize provenance, reproducibility, and
 clear rollback paths.
