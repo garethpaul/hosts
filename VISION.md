@@ -42,7 +42,7 @@ clear rollback paths.
 Do not add sources that require private credentials or collect user browsing
 behavior.
 
-## What We Will Not Merge For Now
+## What We Will Not Merge (For Now)
 
 - Opaque blocklist sources with no provenance
 - Generated data updates without source metadata review
