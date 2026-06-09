@@ -25,6 +25,8 @@ Priority:
   duplicate scope, JSON metadata, updater syntax, and custom exclusion escaping
 - Keep custom exclusion inputs limited to plain domains before regex compilation
 - Ensure source URLs include hosts before the updater fetches them
+- Keep `make lint`, `make test`, `make build`, and `make check` available as
+  local verification gates
 
 Next priorities:
 
@@ -51,11 +53,12 @@ clear rollback paths.
 Do not add sources that require private credentials or collect user browsing
 behavior.
 
-Current baseline: `make check` runs `scripts/check-baseline.py`, which validates
-the checked-in hosts snapshot, metadata JSON, duplicate handling, generated rule
-count, and legacy updater syntax without fetching remote source lists or
-replacing the local `/etc/hosts` file. The updater guardrails also cover
-HTTP(S)-only source fetches, fetch timeouts, response cleanup, source URLs include hosts, and source metadata file handles.
+Current baseline: `make lint`, `make test`, `make build`, and `make check` run
+`scripts/check-baseline.py`, which validates the checked-in hosts snapshot,
+metadata JSON, duplicate handling, generated rule count, and legacy updater
+syntax without fetching remote source lists or replacing the local `/etc/hosts`
+file. The updater guardrails also cover HTTP(S)-only source fetches, fetch
+timeouts, response cleanup, source URLs include hosts, and source metadata file handles.
 Source output file handles close on write failures during source refreshes.
 
 ## What We Will Not Merge (For Now)

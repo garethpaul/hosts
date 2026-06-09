@@ -2,6 +2,8 @@
 
 ## 2026-06-09
 
+- Added local `make lint`, `make test`, and `make build` gate aliases for the
+  static generated-data baseline.
 - Required updater source URLs to include HTTP(S) schemes and hosts before
   fetch attempts.
 - Closed updater source fetch response objects after reads while preserving

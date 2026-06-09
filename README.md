@@ -41,6 +41,9 @@ Additional scan context:
 ```bash
 git clone https://github.com/garethpaul/hosts.git
 cd hosts
+make lint
+make test
+make build
 make check
 ```
 
@@ -59,8 +62,15 @@ The checked-in `hosts` file is a generated snapshot. The updater references sour
 Run the static baseline:
 
 ```bash
+make lint
+make test
+make build
 make check
 ```
+
+The `lint`, `test`, and `build` targets intentionally alias the static baseline
+so the standard local gate commands stay available while preserving the single
+source of truth.
 
 The baseline runs `scripts/check-baseline.py`, validates `readmeData.json`, parses the README SVG, checks `updateFile.py` syntax without fetching remote lists, verifies generated hosts-line syntax and counts, and limits duplicates to known static localhost aliases.
 It also verifies updater source fetches keep HTTP(S)-only URL validation,
@@ -98,7 +108,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
   host validation guardrail.
 - See `docs/plans/2026-06-09-source-output-file-handle-cleanup.md` for the
   source output file-handle cleanup guardrail.
-- Run `make check` before pushing changes to `hosts`, `readmeData.json`, updater code, or source metadata.
+- See `docs/plans/2026-06-09-make-gate-aliases.md` for the local gate alias guardrail.
+- Run `make lint`, `make test`, `make build`, and `make check` before pushing changes to `hosts`, `readmeData.json`, updater code, or source metadata.
 
 ## Contributing
 
