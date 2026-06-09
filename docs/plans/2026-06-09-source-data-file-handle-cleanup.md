@@ -13,7 +13,7 @@ guard for remote source fetches.
 
 - Use context managers when reading source metadata JSON files.
 - Preserve the existing generated-hosts and source-provenance baseline.
-- Add static baseline coverage so future edits keep the file-handle cleanup.
+- Add baseline fixture coverage so malformed metadata reads still close files.
 - Document the guard alongside the source fetch cleanup work.
 
 ## Verification

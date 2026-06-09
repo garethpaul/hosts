@@ -4,7 +4,8 @@
 
 - Closed updater source fetch response objects after reads while preserving
   HTTP(S)-only URL validation and the existing network timeout.
-- Closed source metadata file handles while reading update JSON data.
+- Closed source metadata file handles while reading update JSON data, with
+  baseline coverage for malformed metadata parse failures.
 
 ## 2026-06-08
 

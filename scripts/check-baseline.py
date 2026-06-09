@@ -137,6 +137,65 @@ def check_source_fetch_closes_response(failures):
             failures)
 
 
+def check_source_data_files_close_on_parse_failure(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    class FakeSourceDataFile:
+        def __init__(self):
+            self.closed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            self.closed = True
+            return False
+
+        def read(self):
+            return "{"
+
+    opened_files = []
+
+    def fake_open(path, mode="r"):
+        require(path == "source/update.json",
+                "update_sources_data must open source metadata paths returned by recursive_glob",
+                failures)
+        require(mode == "r",
+                "update_sources_data must read source metadata in text mode",
+                failures)
+        source_data_file = FakeSourceDataFile()
+        opened_files.append(source_data_file)
+        return source_data_file
+
+    namespace["recursive_glob"] = lambda root, filename: ["source/update.json"]
+    namespace["open"] = fake_open
+
+    try:
+        namespace["update_sources_data"](
+            [],
+            datapath="data",
+            extensions=[],
+            extensionspath="extensions",
+            sourcedatafilename="update.json")
+    except ValueError:
+        pass
+    else:
+        failures.append("update_sources_data fixture must raise on malformed source metadata JSON")
+
+    require(opened_files and opened_files[0].closed,
+            "update_sources_data must close source metadata files when JSON parsing fails",
+            failures)
+
+
 def check_hosts_file(failures):
     hosts_text = read("hosts")
     header_match = HEADER_COUNT_RE.search(hosts_text)
@@ -247,6 +306,7 @@ def main():
     check_exclusion_regex_escaping(failures)
     check_exclusion_domain_validation(failures)
     check_source_fetch_closes_response(failures)
+    check_source_data_files_close_on_parse_failure(failures)
     check_hosts_file(failures)
     check_readme_data(failures)
 
