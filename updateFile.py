@@ -505,21 +505,19 @@ def update_sources_data(sources_data, **sources_params):
 
     for source in recursive_glob(sources_params["datapath"],
                                  source_data_filename):
-        update_file = open(source, "r")
-        update_data = json.load(update_file)
+        with open(source, "r") as update_file:
+            update_data = json.load(update_file)
         sources_data.append(update_data)
-        update_file.close()
 
     for source in sources_params["extensions"]:
         source_dir = path_join_robust(
             sources_params["extensionspath"], source)
         for update_file_path in recursive_glob(source_dir,
                                                source_data_filename):
-            update_file = open(update_file_path, "r")
-            update_data = json.load(update_file)
+            with open(update_file_path, "r") as update_file:
+                update_data = json.load(update_file)
 
             sources_data.append(update_data)
-            update_file.close()
 
     return sources_data
 
@@ -543,10 +541,9 @@ def update_all_sources(source_data_filename, host_filename):
     all_sources = recursive_glob("*", source_data_filename)
 
     for source in all_sources:
-        update_file = open(source, "r")
-        update_data = json.load(update_file)
+        with open(source, "r") as update_file:
+            update_data = json.load(update_file)
         update_url = update_data["url"]
-        update_file.close()
 
         print("Updating source " + os.path.dirname(
             source) + " from " + update_url)

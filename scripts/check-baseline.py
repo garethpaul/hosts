@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[1]
 PLAN = ROOT / "docs/plans/2026-06-08-hosts-baseline.md"
 FETCH_PLAN = ROOT / "docs/plans/2026-06-09-source-fetch-response-cleanup.md"
+SOURCE_DATA_PLAN = ROOT / "docs/plans/2026-06-09-source-data-file-handle-cleanup.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -235,6 +236,7 @@ def main():
         "docs/plans/2026-06-08-exclusion-regex-guard.md",
         "docs/plans/2026-06-08-exclusion-domain-validation.md",
         "docs/plans/2026-06-09-source-fetch-response-cleanup.md",
+        "docs/plans/2026-06-09-source-data-file-handle-cleanup.md",
     ]
 
     for relative_path in required_files:
@@ -255,6 +257,10 @@ def main():
     require("urlopen(url, timeout=30)" in updater,
             "updateFile.py must fetch source URLs with a timeout",
             failures)
+    require('with open(source, "r") as update_file:' in updater and
+            'with open(update_file_path, "r") as update_file:' in updater,
+            "updateFile.py must close source metadata files after JSON reads",
+            failures)
     require("re.escape(domain)" in updater,
             "updateFile.py must escape custom exclusion domains before compiling regexes",
             failures)
@@ -274,16 +280,17 @@ def main():
     exclusion_plan = read("docs/plans/2026-06-08-exclusion-regex-guard.md")
     exclusion_validation_plan = read("docs/plans/2026-06-08-exclusion-domain-validation.md")
     fetch_plan = FETCH_PLAN.read_text(encoding="utf-8") if FETCH_PLAN.exists() else ""
-    require("make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "response cleanup" in readme.lower(),
+    source_data_plan = SOURCE_DATA_PLAN.read_text(encoding="utf-8") if SOURCE_DATA_PLAN.exists() else ""
+    require("make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "response cleanup" in readme.lower() and "source metadata file handles" in readme.lower(),
             "README must document static verification, source metadata, and updater usage",
             failures)
-    require("scripts/check-baseline.py" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "response cleanup" in vision.lower(),
+    require("scripts/check-baseline.py" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "response cleanup" in vision.lower() and "source metadata file handles" in vision.lower(),
             "VISION must describe baseline validation and provenance guardrails",
             failures)
     require("false positive" in security.lower() and "source metadata" in security.lower() and "response cleanup" in security.lower(),
             "SECURITY must document false-positive and source metadata review expectations",
             failures)
-    require("timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "response" in changes.lower(),
+    require("timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "response" in changes.lower() and "source metadata file handles" in changes.lower(),
             "CHANGES must record updater timeout and generated hosts baseline updates",
             failures)
     require("__pycache__/" in gitignore and "*.py[cod]" in gitignore and ".env" in gitignore,
@@ -300,6 +307,9 @@ def main():
             failures)
     require("status: completed" in fetch_plan,
             "source fetch response cleanup plan must be marked completed",
+            failures)
+    require("status: completed" in source_data_plan,
+            "source data file-handle cleanup plan must be marked completed",
             failures)
 
     if failures:
