@@ -92,7 +92,7 @@ def check_exclusion_domain_validation(failures):
     for domain in ["example.com", "ads.example.co.uk"]:
         require(is_valid(domain), f"custom exclusion should accept {domain}", failures)
 
-    for domain in ["", "www.example.com", "http://example.com", "example.com/path", "example com", "*.example.com", "example..com"]:
+    for domain in ["", "www.example.com", "http://example.com", "example.com/path", "example com", "*.example.com", "example..com", "-example.com", "example-.com"]:
         require(not is_valid(domain), f"custom exclusion should reject {domain or '<empty>'}", failures)
 
 
@@ -231,10 +231,10 @@ def main():
     plan = PLAN.read_text(encoding="utf-8") if PLAN.exists() else ""
     exclusion_plan = read("docs/plans/2026-06-08-exclusion-regex-guard.md")
     exclusion_validation_plan = read("docs/plans/2026-06-08-exclusion-domain-validation.md")
-    require("make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower(),
+    require("make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower(),
             "README must document static verification, source metadata, and updater usage",
             failures)
-    require("scripts/check-baseline.py" in vision and "provenance" in vision.lower(),
+    require("scripts/check-baseline.py" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower(),
             "VISION must describe baseline validation and provenance guardrails",
             failures)
     require("false positive" in security.lower() and "source metadata" in security.lower(),
