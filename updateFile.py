@@ -1108,11 +1108,17 @@ def is_valid_domain_format(domain):
         return False
 
     domain_regex = re.compile(r"www\d{0,3}[.]|https?")
+    domain_format_regex = re.compile(
+        r"^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$")
 
     if domain_regex.match(domain):
         print("The domain " + domain +
               " is not valid. Do not include "
               "www.domain.com or http(s)://domain.com. Try again.")
+        return False
+    elif not domain_format_regex.match(domain):
+        print("The domain " + domain +
+              " is not valid. Enter a plain domain such as example.com.")
         return False
     else:
         return True

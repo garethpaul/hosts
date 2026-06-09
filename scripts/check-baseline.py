@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import ast
+import contextlib
+import io
 import json
 import re
 import sys
@@ -69,6 +71,29 @@ def check_exclusion_regex_escaping(failures):
     require(not regexes[0].search("examplexcom"),
             "exclude_domain must escape user-provided dots to avoid overbroad exclusions",
             failures)
+
+
+def check_exclusion_domain_validation(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    def is_valid(domain):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return namespace["is_valid_domain_format"](domain)
+
+    for domain in ["example.com", "ads.example.co.uk"]:
+        require(is_valid(domain), f"custom exclusion should accept {domain}", failures)
+
+    for domain in ["", "www.example.com", "http://example.com", "example.com/path", "example com", "*.example.com", "example..com"]:
+        require(not is_valid(domain), f"custom exclusion should reject {domain or '<empty>'}", failures)
 
 
 def check_hosts_file(failures):
@@ -168,6 +193,7 @@ def main():
         "docs/readme-overview.svg",
         "docs/plans/2026-06-08-hosts-baseline.md",
         "docs/plans/2026-06-08-exclusion-regex-guard.md",
+        "docs/plans/2026-06-08-exclusion-domain-validation.md",
     ]
 
     for relative_path in required_files:
@@ -176,6 +202,7 @@ def main():
     parse_xml("docs/readme-overview.svg", failures)
     check_python_compile(failures)
     check_exclusion_regex_escaping(failures)
+    check_exclusion_domain_validation(failures)
     check_hosts_file(failures)
     check_readme_data(failures)
 
@@ -189,6 +216,9 @@ def main():
     require("re.escape(domain)" in updater,
             "updateFile.py must escape custom exclusion domains before compiling regexes",
             failures)
+    require("domain_format_regex" in updater and "example.com" in updater,
+            "updateFile.py must validate custom exclusions as plain domains",
+            failures)
     require("shell=True" not in updater,
             "updateFile.py must not use shell=True for privileged commands",
             failures)
@@ -200,6 +230,7 @@ def main():
     gitignore = read(".gitignore")
     plan = PLAN.read_text(encoding="utf-8") if PLAN.exists() else ""
     exclusion_plan = read("docs/plans/2026-06-08-exclusion-regex-guard.md")
+    exclusion_validation_plan = read("docs/plans/2026-06-08-exclusion-domain-validation.md")
     require("make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower(),
             "README must document static verification, source metadata, and updater usage",
             failures)
@@ -209,7 +240,7 @@ def main():
     require("false positive" in security.lower() and "source metadata" in security.lower(),
             "SECURITY must document false-positive and source metadata review expectations",
             failures)
-    require("timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower(),
+    require("timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower(),
             "CHANGES must record updater timeout and generated hosts baseline updates",
             failures)
     require("__pycache__/" in gitignore and "*.py[cod]" in gitignore and ".env" in gitignore,
@@ -220,6 +251,9 @@ def main():
             failures)
     require("status: completed" in exclusion_plan,
             "exclusion regex plan must be marked completed",
+            failures)
+    require("status: completed" in exclusion_validation_plan,
+            "exclusion domain validation plan must be marked completed",
             failures)
 
     if failures:
