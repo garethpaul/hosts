@@ -1003,7 +1003,10 @@ def get_file_by_url(url):
         if parsed_url.scheme not in ("http", "https"):
             raise ValueError("unsupported source URL scheme: " + url)
         f = urlopen(url, timeout=30)
-        return f.read().decode("UTF-8")
+        try:
+            return f.read().decode("UTF-8")
+        finally:
+            f.close()
     except Exception as error:
         print("Problem getting file: {0} ({1})".format(url, error))
 

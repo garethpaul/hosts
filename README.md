@@ -63,6 +63,8 @@ make check
 ```
 
 The baseline runs `scripts/check-baseline.py`, validates `readmeData.json`, parses the README SVG, checks `updateFile.py` syntax without fetching remote lists, verifies generated hosts-line syntax and counts, and limits duplicates to known static localhost aliases.
+It also verifies updater source fetches keep HTTP(S)-only URL validation,
+network timeouts, and response cleanup behavior.
 
 When the required SDK or runtime is unavailable, use static checks and source review first, then verify on a machine that has the matching platform toolchain.
 
@@ -85,6 +87,7 @@ When the required SDK or runtime is unavailable, use static checks and source re
 - See `SECURITY.md` for vulnerability reporting and safe research guidance.
 - See `VISION.md` for project direction and contribution guardrails.
 - See `docs/plans/2026-06-08-exclusion-domain-validation.md` for the custom exclusion input guardrail.
+- See `docs/plans/2026-06-09-source-fetch-response-cleanup.md` for the updater source fetch cleanup guardrail.
 - Run `make check` before pushing changes to `hosts`, `readmeData.json`, updater code, or source metadata.
 
 ## Contributing

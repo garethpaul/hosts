@@ -53,7 +53,8 @@ behavior.
 Current baseline: `make check` runs `scripts/check-baseline.py`, which validates
 the checked-in hosts snapshot, metadata JSON, duplicate handling, generated rule
 count, and legacy updater syntax without fetching remote source lists or
-replacing the local `/etc/hosts` file.
+replacing the local `/etc/hosts` file. The updater guardrails also cover
+HTTP(S)-only source fetches, fetch timeouts, and response cleanup.
 
 ## What We Will Not Merge (For Now)
 

@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 PLAN = ROOT / "docs/plans/2026-06-08-hosts-baseline.md"
+FETCH_PLAN = ROOT / "docs/plans/2026-06-09-source-fetch-response-cleanup.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -94,6 +95,45 @@ def check_exclusion_domain_validation(failures):
 
     for domain in ["", "www.example.com", "http://example.com", "example.com/path", "example com", "*.example.com", "example..com", "-example.com", "example-.com"]:
         require(not is_valid(domain), f"custom exclusion should reject {domain or '<empty>'}", failures)
+
+
+def check_source_fetch_closes_response(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    class FakeResponse:
+        def __init__(self):
+            self.closed = False
+
+        def read(self):
+            return b"0.0.0.0 example.test\n"
+
+        def close(self):
+            self.closed = True
+
+    response = FakeResponse()
+
+    def fake_urlopen(url, timeout):
+        require(url == "https://example.test/hosts", "get_file_by_url must fetch the requested URL", failures)
+        require(timeout == 30, "get_file_by_url must keep the 30-second timeout", failures)
+        return response
+
+    namespace["urlopen"] = fake_urlopen
+    result = namespace["get_file_by_url"]("https://example.test/hosts")
+    require(result == "0.0.0.0 example.test\n",
+            "get_file_by_url must decode fetched host data",
+            failures)
+    require(response.closed,
+            "get_file_by_url must close response objects after reading",
+            failures)
 
 
 def check_hosts_file(failures):
@@ -194,6 +234,7 @@ def main():
         "docs/plans/2026-06-08-hosts-baseline.md",
         "docs/plans/2026-06-08-exclusion-regex-guard.md",
         "docs/plans/2026-06-08-exclusion-domain-validation.md",
+        "docs/plans/2026-06-09-source-fetch-response-cleanup.md",
     ]
 
     for relative_path in required_files:
@@ -203,6 +244,7 @@ def main():
     check_python_compile(failures)
     check_exclusion_regex_escaping(failures)
     check_exclusion_domain_validation(failures)
+    check_source_fetch_closes_response(failures)
     check_hosts_file(failures)
     check_readme_data(failures)
 
@@ -231,16 +273,17 @@ def main():
     plan = PLAN.read_text(encoding="utf-8") if PLAN.exists() else ""
     exclusion_plan = read("docs/plans/2026-06-08-exclusion-regex-guard.md")
     exclusion_validation_plan = read("docs/plans/2026-06-08-exclusion-domain-validation.md")
-    require("make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower(),
+    fetch_plan = FETCH_PLAN.read_text(encoding="utf-8") if FETCH_PLAN.exists() else ""
+    require("make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "response cleanup" in readme.lower(),
             "README must document static verification, source metadata, and updater usage",
             failures)
-    require("scripts/check-baseline.py" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower(),
+    require("scripts/check-baseline.py" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "response cleanup" in vision.lower(),
             "VISION must describe baseline validation and provenance guardrails",
             failures)
-    require("false positive" in security.lower() and "source metadata" in security.lower(),
+    require("false positive" in security.lower() and "source metadata" in security.lower() and "response cleanup" in security.lower(),
             "SECURITY must document false-positive and source metadata review expectations",
             failures)
-    require("timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower(),
+    require("timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "response" in changes.lower(),
             "CHANGES must record updater timeout and generated hosts baseline updates",
             failures)
     require("__pycache__/" in gitignore and "*.py[cod]" in gitignore and ".env" in gitignore,
@@ -254,6 +297,9 @@ def main():
             failures)
     require("status: completed" in exclusion_validation_plan,
             "exclusion domain validation plan must be marked completed",
+            failures)
+    require("status: completed" in fetch_plan,
+            "source fetch response cleanup plan must be marked completed",
             failures)
 
     if failures:

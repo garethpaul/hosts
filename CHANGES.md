@@ -1,5 +1,10 @@
 # Changes
 
+## 2026-06-09
+
+- Closed updater source fetch response objects after reads while preserving
+  HTTP(S)-only URL validation and the existing network timeout.
+
 ## 2026-06-08
 
 - Added `make check` and a static baseline for generated hosts data, source metadata, README docs, and updater safety.
