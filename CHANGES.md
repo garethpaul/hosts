@@ -8,6 +8,8 @@
   HTTP(S)-only URL validation and the existing network timeout.
 - Closed source metadata file handles while reading update JSON data, with
   baseline coverage for malformed metadata parse failures.
+- Closed source output file handles while writing refreshed hosts data, with
+  baseline coverage for write failures.
 
 ## 2026-06-08
 

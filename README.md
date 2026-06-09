@@ -66,7 +66,8 @@ The baseline runs `scripts/check-baseline.py`, validates `readmeData.json`, pars
 It also verifies updater source fetches keep HTTP(S)-only URL validation,
 source URL host validation, network timeouts, and response cleanup behavior.
 Source metadata file handles are also checked so JSON reads close promptly while
-building source data.
+building source data. Source output file handles are checked so generated hosts
+files close even when source writes fail.
 
 When the required SDK or runtime is unavailable, use static checks and source review first, then verify on a machine that has the matching platform toolchain.
 
@@ -95,6 +96,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
   source metadata file-handle cleanup guardrail.
 - See `docs/plans/2026-06-09-source-url-host-validation.md` for the source URL
   host validation guardrail.
+- See `docs/plans/2026-06-09-source-output-file-handle-cleanup.md` for the
+  source output file-handle cleanup guardrail.
 - Run `make check` before pushing changes to `hosts`, `readmeData.json`, updater code, or source metadata.
 
 ## Contributing

@@ -16,6 +16,7 @@ PLAN = ROOT / "docs/plans/2026-06-08-hosts-baseline.md"
 FETCH_PLAN = ROOT / "docs/plans/2026-06-09-source-fetch-response-cleanup.md"
 SOURCE_DATA_PLAN = ROOT / "docs/plans/2026-06-09-source-data-file-handle-cleanup.md"
 SOURCE_URL_HOST_PLAN = ROOT / "docs/plans/2026-06-09-source-url-host-validation.md"
+SOURCE_OUTPUT_PLAN = ROOT / "docs/plans/2026-06-09-source-output-file-handle-cleanup.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -223,6 +224,66 @@ def check_source_data_files_close_on_parse_failure(failures):
             failures)
 
 
+def check_source_output_files_close_on_write_failure(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    class FakeSourceDataFile:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        def read(self):
+            return '{"url": "https://example.test/hosts"}'
+
+    class FakeHostsFile:
+        def __init__(self):
+            self.closed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            self.closed = True
+            return False
+
+    opened_outputs = []
+
+    def fake_open(path, mode="r"):
+        if path == "source/update.json" and mode == "r":
+            return FakeSourceDataFile()
+        if str(path).endswith("source/hosts") and mode == "wb":
+            hosts_file = FakeHostsFile()
+            opened_outputs.append(hosts_file)
+            return hosts_file
+        raise AssertionError("unexpected open call: {0} {1}".format(path, mode))
+
+    def fake_write_data(hosts_file, updated_file):
+        raise IOError("simulated write failure")
+
+    namespace["recursive_glob"] = lambda root, filename: ["source/update.json"]
+    namespace["open"] = fake_open
+    namespace["get_file_by_url"] = lambda url: "0.0.0.0 example.test\n"
+    namespace["write_data"] = fake_write_data
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        namespace["update_all_sources"]("update.json", "hosts")
+
+    require(opened_outputs and opened_outputs[0].closed,
+            "update_all_sources must close generated source hosts files when writes fail",
+            failures)
+
+
 def check_hosts_file(failures):
     hosts_text = read("hosts")
     header_match = HEADER_COUNT_RE.search(hosts_text)
@@ -325,6 +386,7 @@ def main():
         "docs/plans/2026-06-09-source-fetch-response-cleanup.md",
         "docs/plans/2026-06-09-source-data-file-handle-cleanup.md",
         "docs/plans/2026-06-09-source-url-host-validation.md",
+        "docs/plans/2026-06-09-source-output-file-handle-cleanup.md",
     ]
 
     for relative_path in required_files:
@@ -337,6 +399,7 @@ def main():
     check_source_fetch_closes_response(failures)
     check_source_fetch_requires_host(failures)
     check_source_data_files_close_on_parse_failure(failures)
+    check_source_output_files_close_on_write_failure(failures)
     check_hosts_file(failures)
     check_readme_data(failures)
 
@@ -350,6 +413,9 @@ def main():
     require('with open(source, "r") as update_file:' in updater and
             'with open(update_file_path, "r") as update_file:' in updater,
             "updateFile.py must close source metadata files after JSON reads",
+            failures)
+    require('"wb") as hosts_file:' in updater,
+            "updateFile.py must close generated source hosts files after writes",
             failures)
     require("re.escape(domain)" in updater,
             "updateFile.py must escape custom exclusion domains before compiling regexes",
@@ -372,16 +438,17 @@ def main():
     fetch_plan = FETCH_PLAN.read_text(encoding="utf-8") if FETCH_PLAN.exists() else ""
     source_data_plan = SOURCE_DATA_PLAN.read_text(encoding="utf-8") if SOURCE_DATA_PLAN.exists() else ""
     source_url_host_plan = SOURCE_URL_HOST_PLAN.read_text(encoding="utf-8") if SOURCE_URL_HOST_PLAN.exists() else ""
-    require("make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "response cleanup" in readme.lower() and "source metadata file handles" in readme.lower() and "source urls require http(s) schemes and hosts" in readme.lower(),
+    source_output_plan = SOURCE_OUTPUT_PLAN.read_text(encoding="utf-8") if SOURCE_OUTPUT_PLAN.exists() else ""
+    require("make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "response cleanup" in readme.lower() and "source metadata file handles" in readme.lower() and "source output file handles" in readme.lower() and "source urls require http(s) schemes and hosts" in readme.lower(),
             "README must document static verification, source metadata, and updater usage",
             failures)
-    require("scripts/check-baseline.py" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "response cleanup" in vision.lower() and "source metadata file handles" in vision.lower() and "source urls include hosts" in vision.lower(),
+    require("scripts/check-baseline.py" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "response cleanup" in vision.lower() and "source metadata file handles" in vision.lower() and "source output file handles" in vision.lower() and "source urls include hosts" in vision.lower(),
             "VISION must describe baseline validation and provenance guardrails",
             failures)
-    require("false positive" in security.lower() and "source metadata" in security.lower() and "response cleanup" in security.lower() and "source urls" in security.lower(),
+    require("false positive" in security.lower() and "source metadata" in security.lower() and "response cleanup" in security.lower() and "source output file handles" in security.lower() and "source urls" in security.lower(),
             "SECURITY must document false-positive and source metadata review expectations",
             failures)
-    require("timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "response" in changes.lower() and "source metadata file handles" in changes.lower() and "source urls" in changes.lower(),
+    require("timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "response" in changes.lower() and "source metadata file handles" in changes.lower() and "source output file handles" in changes.lower() and "source urls" in changes.lower(),
             "CHANGES must record updater timeout and generated hosts baseline updates",
             failures)
     require("__pycache__/" in gitignore and "*.py[cod]" in gitignore and ".env" in gitignore,
@@ -404,6 +471,9 @@ def main():
             failures)
     require("status: completed" in source_url_host_plan,
             "source URL host validation plan must be marked completed",
+            failures)
+    require("status: completed" in source_output_plan,
+            "source output file-handle cleanup plan must be marked completed",
             failures)
 
     if failures:

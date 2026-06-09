@@ -56,6 +56,7 @@ the checked-in hosts snapshot, metadata JSON, duplicate handling, generated rule
 count, and legacy updater syntax without fetching remote source lists or
 replacing the local `/etc/hosts` file. The updater guardrails also cover
 HTTP(S)-only source fetches, fetch timeouts, response cleanup, source URLs include hosts, and source metadata file handles.
+Source output file handles close on write failures during source refreshes.
 
 ## What We Will Not Merge (For Now)
 

@@ -554,11 +554,10 @@ def update_all_sources(source_data_filename, host_filename):
             # get rid of carriage-return symbols
             updated_file = updated_file.replace("\r", "")
 
-            hosts_file = open(path_join_robust(BASEDIR_PATH,
-                                               os.path.dirname(source),
-                                               host_filename), "wb")
-            write_data(hosts_file, updated_file)
-            hosts_file.close()
+            with open(path_join_robust(BASEDIR_PATH,
+                                       os.path.dirname(source),
+                                       host_filename), "wb") as hosts_file:
+                write_data(hosts_file, updated_file)
         except Exception:
             print("Error in updating source: ", update_url)
 # End Update Logic
