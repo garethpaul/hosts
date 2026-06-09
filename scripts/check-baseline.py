@@ -18,6 +18,7 @@ FETCH_PLAN = ROOT / "docs/plans/2026-06-09-source-fetch-response-cleanup.md"
 SOURCE_DATA_PLAN = ROOT / "docs/plans/2026-06-09-source-data-file-handle-cleanup.md"
 SOURCE_URL_HOST_PLAN = ROOT / "docs/plans/2026-06-09-source-url-host-validation.md"
 SOURCE_OUTPUT_PLAN = ROOT / "docs/plans/2026-06-09-source-output-file-handle-cleanup.md"
+EXCLUSION_CASE_PLAN = ROOT / "docs/plans/2026-06-09-exclusion-domain-case-normalization.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -75,6 +76,12 @@ def check_exclusion_regex_escaping(failures):
             failures)
     require(not regexes[0].search("examplexcom"),
             "exclude_domain must escape user-provided dots to avoid overbroad exclusions",
+            failures)
+
+    uppercase_regexes = namespace["exclude_domain"](
+        "Example.COM", r"([a-zA-Z\d-]+\.){0,}", [])
+    require(uppercase_regexes[0].search("example.com"),
+            "exclude_domain must normalize custom exclusion domains to lowercase",
             failures)
 
 
@@ -389,6 +396,7 @@ def main():
         "docs/plans/2026-06-09-source-data-file-handle-cleanup.md",
         "docs/plans/2026-06-09-source-url-host-validation.md",
         "docs/plans/2026-06-09-source-output-file-handle-cleanup.md",
+        "docs/plans/2026-06-09-exclusion-domain-case-normalization.md",
     ]
 
     for relative_path in required_files:
@@ -419,8 +427,11 @@ def main():
     require('"wb") as hosts_file:' in updater,
             "updateFile.py must close generated source hosts files after writes",
             failures)
-    require("re.escape(domain)" in updater,
+    require("re.escape(" in updater,
             "updateFile.py must escape custom exclusion domains before compiling regexes",
+            failures)
+    require("normalized_domain = domain.lower()" in updater and "re.escape(normalized_domain)" in updater,
+            "updateFile.py must normalize custom exclusion domains before compiling regexes",
             failures)
     require("domain_format_regex" in updater and "example.com" in updater,
             "updateFile.py must validate custom exclusions as plain domains",
@@ -443,19 +454,20 @@ def main():
     source_data_plan = SOURCE_DATA_PLAN.read_text(encoding="utf-8") if SOURCE_DATA_PLAN.exists() else ""
     source_url_host_plan = SOURCE_URL_HOST_PLAN.read_text(encoding="utf-8") if SOURCE_URL_HOST_PLAN.exists() else ""
     source_output_plan = SOURCE_OUTPUT_PLAN.read_text(encoding="utf-8") if SOURCE_OUTPUT_PLAN.exists() else ""
+    exclusion_case_plan = EXCLUSION_CASE_PLAN.read_text(encoding="utf-8") if EXCLUSION_CASE_PLAN.exists() else ""
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
             failures)
-    require("make lint" in readme and "make test" in readme and "make build" in readme and "make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "response cleanup" in readme.lower() and "source metadata file handles" in readme.lower() and "source output file handles" in readme.lower() and "source urls require http(s) schemes and hosts" in readme.lower(),
+    require("make lint" in readme and "make test" in readme and "make build" in readme and "make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "lowercase" in readme.lower() and "response cleanup" in readme.lower() and "source metadata file handles" in readme.lower() and "source output file handles" in readme.lower() and "source urls require http(s) schemes and hosts" in readme.lower(),
             "README must document static verification, source metadata, and updater usage",
             failures)
-    require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "response cleanup" in vision.lower() and "source metadata file handles" in vision.lower() and "source output file handles" in vision.lower() and "source urls include hosts" in vision.lower(),
+    require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "lowercase" in vision.lower() and "response cleanup" in vision.lower() and "source metadata file handles" in vision.lower() and "source output file handles" in vision.lower() and "source urls include hosts" in vision.lower(),
             "VISION must describe baseline validation and provenance guardrails",
             failures)
     require("false positive" in security.lower() and "source metadata" in security.lower() and "response cleanup" in security.lower() and "source output file handles" in security.lower() and "source urls" in security.lower(),
             "SECURITY must document false-positive and source metadata review expectations",
             failures)
-    require("timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "response" in changes.lower() and "source metadata file handles" in changes.lower() and "source output file handles" in changes.lower() and "source urls" in changes.lower() and "make lint" in changes and "make test" in changes and "make build" in changes,
+    require("timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "lowercase" in changes.lower() and "response" in changes.lower() and "source metadata file handles" in changes.lower() and "source output file handles" in changes.lower() and "source urls" in changes.lower() and "make lint" in changes and "make test" in changes and "make build" in changes,
             "CHANGES must record updater timeout and generated hosts baseline updates",
             failures)
     require("__pycache__/" in gitignore and "*.py[cod]" in gitignore and ".env" in gitignore,
@@ -484,6 +496,9 @@ def main():
             failures)
     require("status: completed" in source_output_plan,
             "source output file-handle cleanup plan must be marked completed",
+            failures)
+    require("status: completed" in exclusion_case_plan,
+            "exclusion domain case-normalization plan must be marked completed",
             failures)
 
     if failures:

@@ -441,7 +441,9 @@ def exclude_domain(domain, exclusion_pattern, exclusion_regexes):
         the `domain` input.
     """
 
-    exclusion_regex = re.compile(exclusion_pattern + re.escape(domain))
+    normalized_domain = domain.lower()
+    exclusion_regex = re.compile(
+        exclusion_pattern + re.escape(normalized_domain))
     exclusion_regexes.append(exclusion_regex)
 
     return exclusion_regexes

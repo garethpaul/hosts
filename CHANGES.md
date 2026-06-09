@@ -12,6 +12,8 @@
   baseline coverage for malformed metadata parse failures.
 - Closed source output file handles while writing refreshed hosts data, with
   baseline coverage for write failures.
+- Normalized custom exclusion domains to lowercase before compiling regexes so
+  they match generated lowercase hostnames.
 
 ## 2026-06-08
 

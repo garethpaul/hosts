@@ -54,7 +54,8 @@ The checked-in `hosts` file is a generated snapshot. The updater references sour
 - Read or consume the checked-in `hosts` file as the generated blocklist artifact.
 - Run `python3 updateFile.py --help` to inspect legacy update options.
 - Custom exclusions must be plain domains, and they are escaped before regex
-  compilation so domain dots are matched literally.
+  compilation so domain dots are matched literally. Custom exclusions are
+  normalized to lowercase before matching generated hosts entries.
 - Do not run replacement actions against `/etc/hosts` unless you understand the local impact and have a rollback copy.
 
 ## Testing and Verification
@@ -101,6 +102,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
 - See `SECURITY.md` for vulnerability reporting and safe research guidance.
 - See `VISION.md` for project direction and contribution guardrails.
 - See `docs/plans/2026-06-08-exclusion-domain-validation.md` for the custom exclusion input guardrail.
+- See `docs/plans/2026-06-09-exclusion-domain-case-normalization.md` for the
+  custom exclusion lowercase normalization guardrail.
 - See `docs/plans/2026-06-09-source-fetch-response-cleanup.md` for the updater source fetch cleanup guardrail.
 - See `docs/plans/2026-06-09-source-data-file-handle-cleanup.md` for the
   source metadata file-handle cleanup guardrail.

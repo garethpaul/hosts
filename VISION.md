@@ -24,6 +24,7 @@ Priority:
 - Keep `scripts/check-baseline.py` passing for hosts syntax, generated counts,
   duplicate scope, JSON metadata, updater syntax, and custom exclusion escaping
 - Keep custom exclusion inputs limited to plain domains before regex compilation
+- Normalize custom exclusions to lowercase before matching generated hostnames
 - Ensure source URLs include hosts before the updater fetches them
 - Keep `make lint`, `make test`, `make build`, and `make check` available as
   local verification gates
@@ -60,6 +61,7 @@ syntax without fetching remote source lists or replacing the local `/etc/hosts`
 file. The updater guardrails also cover HTTP(S)-only source fetches, fetch
 timeouts, response cleanup, source URLs include hosts, and source metadata file handles.
 Source output file handles close on write failures during source refreshes.
+Custom exclusions are normalized to lowercase before matching generated hosts.
 
 ## What We Will Not Merge (For Now)
 
