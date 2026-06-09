@@ -997,8 +997,8 @@ def get_file_by_url(url):
 
     try:
         parsed_url = urlparse(url)
-        if parsed_url.scheme not in ("http", "https"):
-            raise ValueError("unsupported source URL scheme: " + url)
+        if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
+            raise ValueError("source URL must use HTTP(S) with a host: " + url)
         f = urlopen(url, timeout=30)
         try:
             return f.read().decode("UTF-8")

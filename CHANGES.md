@@ -2,6 +2,8 @@
 
 ## 2026-06-09
 
+- Required updater source URLs to include HTTP(S) schemes and hosts before
+  fetch attempts.
 - Closed updater source fetch response objects after reads while preserving
   HTTP(S)-only URL validation and the existing network timeout.
 - Closed source metadata file handles while reading update JSON data, with

@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PLAN = ROOT / "docs/plans/2026-06-08-hosts-baseline.md"
 FETCH_PLAN = ROOT / "docs/plans/2026-06-09-source-fetch-response-cleanup.md"
 SOURCE_DATA_PLAN = ROOT / "docs/plans/2026-06-09-source-data-file-handle-cleanup.md"
+SOURCE_URL_HOST_PLAN = ROOT / "docs/plans/2026-06-09-source-url-host-validation.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -134,6 +135,32 @@ def check_source_fetch_closes_response(failures):
             failures)
     require(response.closed,
             "get_file_by_url must close response objects after reading",
+            failures)
+
+
+def check_source_fetch_requires_host(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    attempted_fetches = []
+
+    def fake_urlopen(url, timeout):
+        attempted_fetches.append((url, timeout))
+        raise AssertionError("malformed source URL should not be fetched")
+
+    namespace["urlopen"] = fake_urlopen
+    with contextlib.redirect_stdout(io.StringIO()):
+        namespace["get_file_by_url"]("https://")
+    require(not attempted_fetches,
+            "get_file_by_url must reject HTTP(S) source URLs without a host before fetching",
             failures)
 
 
@@ -263,7 +290,8 @@ def check_readme_data(failures):
                 require(field in source, f"{config_name} source is missing {field}", failures)
 
             source_url = source.get("url", "")
-            require(urlparse(source_url).scheme in ("http", "https"),
+            parsed_source_url = urlparse(source_url)
+            require(parsed_source_url.scheme in ("http", "https") and parsed_source_url.netloc,
                     f"{config_name}/{source.get('name', '<unnamed>')} url must be HTTP(S): {source_url}",
                     failures)
 
@@ -296,6 +324,7 @@ def main():
         "docs/plans/2026-06-08-exclusion-domain-validation.md",
         "docs/plans/2026-06-09-source-fetch-response-cleanup.md",
         "docs/plans/2026-06-09-source-data-file-handle-cleanup.md",
+        "docs/plans/2026-06-09-source-url-host-validation.md",
     ]
 
     for relative_path in required_files:
@@ -306,13 +335,14 @@ def main():
     check_exclusion_regex_escaping(failures)
     check_exclusion_domain_validation(failures)
     check_source_fetch_closes_response(failures)
+    check_source_fetch_requires_host(failures)
     check_source_data_files_close_on_parse_failure(failures)
     check_hosts_file(failures)
     check_readme_data(failures)
 
     updater = read("updateFile.py")
-    require("urlparse(url)" in updater and 'parsed_url.scheme not in ("http", "https")' in updater,
-            "updateFile.py must reject unsupported source URL schemes",
+    require("urlparse(url)" in updater and 'parsed_url.scheme not in ("http", "https") or not parsed_url.netloc' in updater,
+            "updateFile.py must reject unsupported source URL schemes and missing hosts",
             failures)
     require("urlopen(url, timeout=30)" in updater,
             "updateFile.py must fetch source URLs with a timeout",
@@ -341,16 +371,17 @@ def main():
     exclusion_validation_plan = read("docs/plans/2026-06-08-exclusion-domain-validation.md")
     fetch_plan = FETCH_PLAN.read_text(encoding="utf-8") if FETCH_PLAN.exists() else ""
     source_data_plan = SOURCE_DATA_PLAN.read_text(encoding="utf-8") if SOURCE_DATA_PLAN.exists() else ""
-    require("make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "response cleanup" in readme.lower() and "source metadata file handles" in readme.lower(),
+    source_url_host_plan = SOURCE_URL_HOST_PLAN.read_text(encoding="utf-8") if SOURCE_URL_HOST_PLAN.exists() else ""
+    require("make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "response cleanup" in readme.lower() and "source metadata file handles" in readme.lower() and "source urls require http(s) schemes and hosts" in readme.lower(),
             "README must document static verification, source metadata, and updater usage",
             failures)
-    require("scripts/check-baseline.py" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "response cleanup" in vision.lower() and "source metadata file handles" in vision.lower(),
+    require("scripts/check-baseline.py" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "response cleanup" in vision.lower() and "source metadata file handles" in vision.lower() and "source urls include hosts" in vision.lower(),
             "VISION must describe baseline validation and provenance guardrails",
             failures)
-    require("false positive" in security.lower() and "source metadata" in security.lower() and "response cleanup" in security.lower(),
+    require("false positive" in security.lower() and "source metadata" in security.lower() and "response cleanup" in security.lower() and "source urls" in security.lower(),
             "SECURITY must document false-positive and source metadata review expectations",
             failures)
-    require("timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "response" in changes.lower() and "source metadata file handles" in changes.lower(),
+    require("timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "response" in changes.lower() and "source metadata file handles" in changes.lower() and "source urls" in changes.lower(),
             "CHANGES must record updater timeout and generated hosts baseline updates",
             failures)
     require("__pycache__/" in gitignore and "*.py[cod]" in gitignore and ".env" in gitignore,
@@ -370,6 +401,9 @@ def main():
             failures)
     require("status: completed" in source_data_plan,
             "source data file-handle cleanup plan must be marked completed",
+            failures)
+    require("status: completed" in source_url_host_plan,
+            "source URL host validation plan must be marked completed",
             failures)
 
     if failures:

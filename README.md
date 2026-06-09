@@ -64,7 +64,7 @@ make check
 
 The baseline runs `scripts/check-baseline.py`, validates `readmeData.json`, parses the README SVG, checks `updateFile.py` syntax without fetching remote lists, verifies generated hosts-line syntax and counts, and limits duplicates to known static localhost aliases.
 It also verifies updater source fetches keep HTTP(S)-only URL validation,
-network timeouts, and response cleanup behavior.
+source URL host validation, network timeouts, and response cleanup behavior.
 Source metadata file handles are also checked so JSON reads close promptly while
 building source data.
 
@@ -82,6 +82,7 @@ When the required SDK or runtime is unavailable, use static checks and source re
 - Review changes touching shell execution, subprocess, or dynamic evaluation; examples from the scan include updateFile.py.
 - Review changes touching infrastructure, proxy, cloud, or deployment configuration; examples from the scan include readmeData.json.
 - Treat false positives as security and reliability issues: an overbroad entry can block account recovery, updates, payments, or other important services.
+- Source URLs require HTTP(S) schemes and hosts before the updater fetches them.
 - `updateFile.py --replace` and DNS flush behavior can affect the local machine's `/etc/hosts`; review generated output and keep backups before privileged replacement.
 
 ## Maintenance Notes
@@ -92,6 +93,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
 - See `docs/plans/2026-06-09-source-fetch-response-cleanup.md` for the updater source fetch cleanup guardrail.
 - See `docs/plans/2026-06-09-source-data-file-handle-cleanup.md` for the
   source metadata file-handle cleanup guardrail.
+- See `docs/plans/2026-06-09-source-url-host-validation.md` for the source URL
+  host validation guardrail.
 - Run `make check` before pushing changes to `hosts`, `readmeData.json`, updater code, or source metadata.
 
 ## Contributing
