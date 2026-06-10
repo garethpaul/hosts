@@ -56,6 +56,8 @@ The checked-in `hosts` file is a generated snapshot. The updater references sour
 - Custom exclusions must be plain domains, and they are escaped before regex
   compilation so domain dots are matched literally. Custom exclusions are
   normalized to lowercase before matching generated hosts entries.
+- Output subfolders must be relative paths without parent traversal, so
+  generated hosts files stay inside the repository tree.
 - Do not run replacement actions against `/etc/hosts` unless you understand the local impact and have a rollback copy.
 
 ## Testing and Verification
@@ -79,6 +81,8 @@ source URL host validation, network timeouts, and response cleanup behavior.
 Source metadata file handles are also checked so JSON reads close promptly while
 building source data. Source output file handles are checked so generated hosts
 files close even when source writes fail.
+Output subfolders are checked so updater writes cannot target paths outside the
+repository through absolute paths or parent traversal.
 
 When the required SDK or runtime is unavailable, use static checks and source review first, then verify on a machine that has the matching platform toolchain.
 
@@ -95,6 +99,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
 - Review changes touching infrastructure, proxy, cloud, or deployment configuration; examples from the scan include readmeData.json.
 - Treat false positives as security and reliability issues: an overbroad entry can block account recovery, updates, payments, or other important services.
 - Source URLs require HTTP(S) schemes and hosts before the updater fetches them.
+- Output subfolders must stay inside the repository before generated hosts data
+  is written.
 - `updateFile.py --replace` and DNS flush behavior can affect the local machine's `/etc/hosts`; review generated output and keep backups before privileged replacement.
 
 ## Maintenance Notes
@@ -111,6 +117,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
   host validation guardrail.
 - See `docs/plans/2026-06-09-source-output-file-handle-cleanup.md` for the
   source output file-handle cleanup guardrail.
+- See `docs/plans/2026-06-09-output-subfolder-validation.md` for the updater
+  output subfolders guardrail.
 - See `docs/plans/2026-06-09-make-gate-aliases.md` for the local gate alias guardrail.
 - Run `make lint`, `make test`, `make build`, and `make check` before pushing changes to `hosts`, `readmeData.json`, updater code, or source metadata.
 

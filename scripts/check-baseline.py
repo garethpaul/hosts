@@ -19,6 +19,7 @@ SOURCE_DATA_PLAN = ROOT / "docs/plans/2026-06-09-source-data-file-handle-cleanup
 SOURCE_URL_HOST_PLAN = ROOT / "docs/plans/2026-06-09-source-url-host-validation.md"
 SOURCE_OUTPUT_PLAN = ROOT / "docs/plans/2026-06-09-source-output-file-handle-cleanup.md"
 EXCLUSION_CASE_PLAN = ROOT / "docs/plans/2026-06-09-exclusion-domain-case-normalization.md"
+OUTPUT_PATH_PLAN = ROOT / "docs/plans/2026-06-09-output-subfolder-validation.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -106,6 +107,26 @@ def check_exclusion_domain_validation(failures):
 
     for domain in ["", "www.example.com", "http://example.com", "example.com/path", "example com", "*.example.com", "example..com", "-example.com", "example-.com"]:
         require(not is_valid(domain), f"custom exclusion should reject {domain or '<empty>'}", failures)
+
+
+def check_output_subfolder_validation(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    validator = namespace["is_safe_output_subfolder"]
+    for output_path in ["", ".", "generated", "generated/mobile"]:
+        require(validator(output_path), f"--output should accept safe subfolder {output_path or '<root>'}", failures)
+
+    for output_path in ["../outside", "generated/../outside", "/tmp/hosts", r"C:\hosts", r"\windows\hosts", r"\\server\share"]:
+        require(not validator(output_path), f"--output should reject unsafe subfolder {output_path}", failures)
 
 
 def check_source_fetch_closes_response(failures):
@@ -397,6 +418,7 @@ def main():
         "docs/plans/2026-06-09-source-url-host-validation.md",
         "docs/plans/2026-06-09-source-output-file-handle-cleanup.md",
         "docs/plans/2026-06-09-exclusion-domain-case-normalization.md",
+        "docs/plans/2026-06-09-output-subfolder-validation.md",
     ]
 
     for relative_path in required_files:
@@ -406,6 +428,7 @@ def main():
     check_python_compile(failures)
     check_exclusion_regex_escaping(failures)
     check_exclusion_domain_validation(failures)
+    check_output_subfolder_validation(failures)
     check_source_fetch_closes_response(failures)
     check_source_fetch_requires_host(failures)
     check_source_data_files_close_on_parse_failure(failures)
@@ -436,6 +459,9 @@ def main():
     require("domain_format_regex" in updater and "example.com" in updater,
             "updateFile.py must validate custom exclusions as plain domains",
             failures)
+    require("is_safe_output_subfolder" in updater and "parser.error(\"--output must be a relative subfolder without parent traversal\")" in updater,
+            "updateFile.py must reject unsafe output subfolders before writing generated hosts files",
+            failures)
     require("shell=True" not in updater,
             "updateFile.py must not use shell=True for privileged commands",
             failures)
@@ -455,19 +481,20 @@ def main():
     source_url_host_plan = SOURCE_URL_HOST_PLAN.read_text(encoding="utf-8") if SOURCE_URL_HOST_PLAN.exists() else ""
     source_output_plan = SOURCE_OUTPUT_PLAN.read_text(encoding="utf-8") if SOURCE_OUTPUT_PLAN.exists() else ""
     exclusion_case_plan = EXCLUSION_CASE_PLAN.read_text(encoding="utf-8") if EXCLUSION_CASE_PLAN.exists() else ""
+    output_path_plan = OUTPUT_PATH_PLAN.read_text(encoding="utf-8") if OUTPUT_PATH_PLAN.exists() else ""
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
             failures)
-    require("make lint" in readme and "make test" in readme and "make build" in readme and "make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "lowercase" in readme.lower() and "response cleanup" in readme.lower() and "source metadata file handles" in readme.lower() and "source output file handles" in readme.lower() and "source urls require http(s) schemes and hosts" in readme.lower(),
+    require("make lint" in readme and "make test" in readme and "make build" in readme and "make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "lowercase" in readme.lower() and "response cleanup" in readme.lower() and "source metadata file handles" in readme.lower() and "source output file handles" in readme.lower() and "source urls require http(s) schemes and hosts" in readme.lower() and "output subfolders" in readme.lower(),
             "README must document static verification, source metadata, and updater usage",
             failures)
-    require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "lowercase" in vision.lower() and "response cleanup" in vision.lower() and "source metadata file handles" in vision.lower() and "source output file handles" in vision.lower() and "source urls include hosts" in vision.lower(),
+    require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "lowercase" in vision.lower() and "response cleanup" in vision.lower() and "source metadata file handles" in vision.lower() and "source output file handles" in vision.lower() and "source urls include hosts" in vision.lower() and "output subfolders" in vision.lower(),
             "VISION must describe baseline validation and provenance guardrails",
             failures)
-    require("false positive" in security.lower() and "source metadata" in security.lower() and "response cleanup" in security.lower() and "source output file handles" in security.lower() and "source urls" in security.lower(),
+    require("false positive" in security.lower() and "source metadata" in security.lower() and "response cleanup" in security.lower() and "source output file handles" in security.lower() and "source urls" in security.lower() and "output subfolders" in security.lower(),
             "SECURITY must document false-positive and source metadata review expectations",
             failures)
-    require("timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "lowercase" in changes.lower() and "response" in changes.lower() and "source metadata file handles" in changes.lower() and "source output file handles" in changes.lower() and "source urls" in changes.lower() and "make lint" in changes and "make test" in changes and "make build" in changes,
+    require("timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "lowercase" in changes.lower() and "response" in changes.lower() and "source metadata file handles" in changes.lower() and "source output file handles" in changes.lower() and "source urls" in changes.lower() and "output subfolders" in changes.lower() and "make lint" in changes and "make test" in changes and "make build" in changes,
             "CHANGES must record updater timeout and generated hosts baseline updates",
             failures)
     require("__pycache__/" in gitignore and "*.py[cod]" in gitignore and ".env" in gitignore,
@@ -499,6 +526,9 @@ def main():
             failures)
     require("status: completed" in exclusion_case_plan,
             "exclusion domain case-normalization plan must be marked completed",
+            failures)
+    require("status: completed" in output_path_plan,
+            "output subfolder validation plan must be marked completed",
             failures)
 
     if failures:

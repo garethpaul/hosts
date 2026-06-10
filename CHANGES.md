@@ -2,6 +2,8 @@
 
 ## 2026-06-09
 
+- Validated updater output subfolders so generated hosts writes stay inside the
+  repository and reject absolute paths or parent traversal.
 - Added local `make lint`, `make test`, and `make build` gate aliases for the
   static generated-data baseline.
 - Required updater source URLs to include HTTP(S) schemes and hosts before

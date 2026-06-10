@@ -117,6 +117,9 @@ def main():
 
     options = vars(parser.parse_args())
 
+    if not is_safe_output_subfolder(options["outputsubfolder"]):
+        parser.error("--output must be a relative subfolder without parent traversal")
+
     options["outputpath"] = path_join_robust(BASEDIR_PATH,
                                              options["outputsubfolder"])
     options["freshen"] = not options["noupdate"]
@@ -1124,6 +1127,32 @@ def is_valid_domain_format(domain):
         return False
     else:
         return True
+
+
+def is_safe_output_subfolder(output_subfolder):
+    """
+    Check whether the generated hosts output folder stays inside the repo.
+
+    Parameters
+    ----------
+    output_subfolder : str
+        The output folder passed through the --output argument.
+
+    Returns
+    -------
+    safe_output_subfolder : bool
+        Whether the output path is relative and does not traverse upward.
+    """
+
+    if output_subfolder in ("", "."):
+        return True
+
+    if (os.path.isabs(output_subfolder) or
+            output_subfolder.startswith("\\") or
+            re.match(r"^[A-Za-z]:", output_subfolder)):
+        return False
+
+    return ".." not in re.split(r"[\\/]+", output_subfolder)
 
 
 def recursive_glob(stem, file_pattern):
