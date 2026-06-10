@@ -25,7 +25,7 @@ Priority:
   duplicate scope, JSON metadata, updater syntax, and custom exclusion escaping
 - Keep custom exclusion inputs limited to plain domains before regex compilation
 - Normalize custom exclusions to lowercase before matching generated hostnames
-- Ensure source URLs include hosts before the updater fetches them
+- Ensure source URLs use HTTPS and include hosts before the updater fetches them
 - Keep output subfolders inside the repository before generated hosts writes
 - Keep `make lint`, `make test`, `make build`, and `make check` available as
   local verification gates
@@ -59,8 +59,8 @@ Current baseline: `make lint`, `make test`, `make build`, and `make check` run
 `scripts/check-baseline.py`, which validates the checked-in hosts snapshot,
 metadata JSON, duplicate handling, generated rule count, and legacy updater
 syntax without fetching remote source lists or replacing the local `/etc/hosts`
-file. The updater guardrails also cover HTTP(S)-only source fetches, fetch
-timeouts, response cleanup, source URLs include hosts, and source metadata file handles.
+file. The updater guardrails also cover HTTPS-only source fetches, fetch
+timeouts, response cleanup, source URLs use HTTPS and include hosts, and source metadata file handles.
 Source output file handles close on write failures during source refreshes.
 Output subfolders are constrained to relative paths within the repository.
 Custom exclusions are normalized to lowercase before matching generated hosts.

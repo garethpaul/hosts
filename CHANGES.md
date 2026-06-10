@@ -1,5 +1,12 @@
 # Changes
 
+## 2026-06-10
+
+- Required updater source payload URLs to use HTTPS and migrated the remaining
+  plain-HTTP source metadata to working TLS endpoints.
+- Added offline baseline coverage proving insecure source URLs are rejected
+  before a network request is attempted.
+
 ## 2026-06-09
 
 - Validated updater output subfolders so generated hosts writes stay inside the

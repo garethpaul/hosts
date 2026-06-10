@@ -17,6 +17,7 @@ MAKE_GATES_PLAN = ROOT / "docs/plans/2026-06-09-make-gate-aliases.md"
 FETCH_PLAN = ROOT / "docs/plans/2026-06-09-source-fetch-response-cleanup.md"
 SOURCE_DATA_PLAN = ROOT / "docs/plans/2026-06-09-source-data-file-handle-cleanup.md"
 SOURCE_URL_HOST_PLAN = ROOT / "docs/plans/2026-06-09-source-url-host-validation.md"
+SOURCE_URL_HTTPS_PLAN = ROOT / "docs/plans/2026-06-10-source-url-https.md"
 SOURCE_OUTPUT_PLAN = ROOT / "docs/plans/2026-06-09-source-output-file-handle-cleanup.md"
 EXCLUSION_CASE_PLAN = ROOT / "docs/plans/2026-06-09-exclusion-domain-case-normalization.md"
 OUTPUT_PATH_PLAN = ROOT / "docs/plans/2026-06-09-output-subfolder-validation.md"
@@ -168,7 +169,7 @@ def check_source_fetch_closes_response(failures):
             failures)
 
 
-def check_source_fetch_requires_host(failures):
+def check_source_fetch_requires_https_host(failures):
     namespace = {
         "__file__": str(ROOT / "updateFile.py"),
         "__name__": "hosts_updatefile_baseline",
@@ -189,8 +190,9 @@ def check_source_fetch_requires_host(failures):
     namespace["urlopen"] = fake_urlopen
     with contextlib.redirect_stdout(io.StringIO()):
         namespace["get_file_by_url"]("https://")
+        namespace["get_file_by_url"]("http://example.test/hosts")
     require(not attempted_fetches,
-            "get_file_by_url must reject HTTP(S) source URLs without a host before fetching",
+            "get_file_by_url must reject hostless or plain-HTTP source URLs before fetching",
             failures)
 
 
@@ -381,8 +383,8 @@ def check_readme_data(failures):
 
             source_url = source.get("url", "")
             parsed_source_url = urlparse(source_url)
-            require(parsed_source_url.scheme in ("http", "https") and parsed_source_url.netloc,
-                    f"{config_name}/{source.get('name', '<unnamed>')} url must be HTTP(S): {source_url}",
+            require(parsed_source_url.scheme == "https" and parsed_source_url.netloc,
+                    f"{config_name}/{source.get('name', '<unnamed>')} url must use HTTPS: {source_url}",
                     failures)
 
             for field in ["homeurl", "issues"]:
@@ -416,6 +418,7 @@ def main():
         "docs/plans/2026-06-09-source-fetch-response-cleanup.md",
         "docs/plans/2026-06-09-source-data-file-handle-cleanup.md",
         "docs/plans/2026-06-09-source-url-host-validation.md",
+        "docs/plans/2026-06-10-source-url-https.md",
         "docs/plans/2026-06-09-source-output-file-handle-cleanup.md",
         "docs/plans/2026-06-09-exclusion-domain-case-normalization.md",
         "docs/plans/2026-06-09-output-subfolder-validation.md",
@@ -430,15 +433,15 @@ def main():
     check_exclusion_domain_validation(failures)
     check_output_subfolder_validation(failures)
     check_source_fetch_closes_response(failures)
-    check_source_fetch_requires_host(failures)
+    check_source_fetch_requires_https_host(failures)
     check_source_data_files_close_on_parse_failure(failures)
     check_source_output_files_close_on_write_failure(failures)
     check_hosts_file(failures)
     check_readme_data(failures)
 
     updater = read("updateFile.py")
-    require("urlparse(url)" in updater and 'parsed_url.scheme not in ("http", "https") or not parsed_url.netloc' in updater,
-            "updateFile.py must reject unsupported source URL schemes and missing hosts",
+    require("urlparse(url)" in updater and 'parsed_url.scheme != "https" or not parsed_url.netloc' in updater,
+            "updateFile.py must require HTTPS source URLs with hosts",
             failures)
     require("urlopen(url, timeout=30)" in updater,
             "updateFile.py must fetch source URLs with a timeout",
@@ -479,19 +482,20 @@ def main():
     fetch_plan = FETCH_PLAN.read_text(encoding="utf-8") if FETCH_PLAN.exists() else ""
     source_data_plan = SOURCE_DATA_PLAN.read_text(encoding="utf-8") if SOURCE_DATA_PLAN.exists() else ""
     source_url_host_plan = SOURCE_URL_HOST_PLAN.read_text(encoding="utf-8") if SOURCE_URL_HOST_PLAN.exists() else ""
+    source_url_https_plan = SOURCE_URL_HTTPS_PLAN.read_text(encoding="utf-8") if SOURCE_URL_HTTPS_PLAN.exists() else ""
     source_output_plan = SOURCE_OUTPUT_PLAN.read_text(encoding="utf-8") if SOURCE_OUTPUT_PLAN.exists() else ""
     exclusion_case_plan = EXCLUSION_CASE_PLAN.read_text(encoding="utf-8") if EXCLUSION_CASE_PLAN.exists() else ""
     output_path_plan = OUTPUT_PATH_PLAN.read_text(encoding="utf-8") if OUTPUT_PATH_PLAN.exists() else ""
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
             failures)
-    require("make lint" in readme and "make test" in readme and "make build" in readme and "make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "lowercase" in readme.lower() and "response cleanup" in readme.lower() and "source metadata file handles" in readme.lower() and "source output file handles" in readme.lower() and "source urls require http(s) schemes and hosts" in readme.lower() and "output subfolders" in readme.lower(),
+    require("make lint" in readme and "make test" in readme and "make build" in readme and "make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "lowercase" in readme.lower() and "response cleanup" in readme.lower() and "source metadata file handles" in readme.lower() and "source output file handles" in readme.lower() and "source urls require https schemes and hosts" in readme.lower() and "output subfolders" in readme.lower(),
             "README must document static verification, source metadata, and updater usage",
             failures)
-    require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "lowercase" in vision.lower() and "response cleanup" in vision.lower() and "source metadata file handles" in vision.lower() and "source output file handles" in vision.lower() and "source urls include hosts" in vision.lower() and "output subfolders" in vision.lower(),
+    require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "lowercase" in vision.lower() and "response cleanup" in vision.lower() and "source metadata file handles" in vision.lower() and "source output file handles" in vision.lower() and "source urls use https" in vision.lower() and "include hosts" in vision.lower() and "output subfolders" in vision.lower(),
             "VISION must describe baseline validation and provenance guardrails",
             failures)
-    require("false positive" in security.lower() and "source metadata" in security.lower() and "response cleanup" in security.lower() and "source output file handles" in security.lower() and "source urls" in security.lower() and "output subfolders" in security.lower(),
+    require("false positive" in security.lower() and "source metadata" in security.lower() and "response cleanup" in security.lower() and "source output file handles" in security.lower() and "source urls must use https" in security.lower() and "output subfolders" in security.lower(),
             "SECURITY must document false-positive and source metadata review expectations",
             failures)
     require("timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "lowercase" in changes.lower() and "response" in changes.lower() and "source metadata file handles" in changes.lower() and "source output file handles" in changes.lower() and "source urls" in changes.lower() and "output subfolders" in changes.lower() and "make lint" in changes and "make test" in changes and "make build" in changes,
@@ -520,6 +524,9 @@ def main():
             failures)
     require("status: completed" in source_url_host_plan,
             "source URL host validation plan must be marked completed",
+            failures)
+    require("status: completed" in source_url_https_plan,
+            "source URL HTTPS plan must be marked completed",
             failures)
     require("status: completed" in source_output_plan,
             "source output file-handle cleanup plan must be marked completed",

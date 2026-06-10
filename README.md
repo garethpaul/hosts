@@ -76,7 +76,7 @@ so the standard local gate commands stay available while preserving the single
 source of truth.
 
 The baseline runs `scripts/check-baseline.py`, validates `readmeData.json`, parses the README SVG, checks `updateFile.py` syntax without fetching remote lists, verifies generated hosts-line syntax and counts, and limits duplicates to known static localhost aliases.
-It also verifies updater source fetches keep HTTP(S)-only URL validation,
+It also verifies updater source fetches keep HTTPS-only URL validation,
 source URL host validation, network timeouts, and response cleanup behavior.
 Source metadata file handles are also checked so JSON reads close promptly while
 building source data. Source output file handles are checked so generated hosts
@@ -98,7 +98,7 @@ When the required SDK or runtime is unavailable, use static checks and source re
 - Review changes touching shell execution, subprocess, or dynamic evaluation; examples from the scan include updateFile.py.
 - Review changes touching infrastructure, proxy, cloud, or deployment configuration; examples from the scan include readmeData.json.
 - Treat false positives as security and reliability issues: an overbroad entry can block account recovery, updates, payments, or other important services.
-- Source URLs require HTTP(S) schemes and hosts before the updater fetches them.
+- Source URLs require HTTPS schemes and hosts before the updater fetches them.
 - Output subfolders must stay inside the repository before generated hosts data
   is written.
 - `updateFile.py --replace` and DNS flush behavior can affect the local machine's `/etc/hosts`; review generated output and keep backups before privileged replacement.
@@ -115,6 +115,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
   source metadata file-handle cleanup guardrail.
 - See `docs/plans/2026-06-09-source-url-host-validation.md` for the source URL
   host validation guardrail.
+- See `docs/plans/2026-06-10-source-url-https.md` for the source payload
+  transport guardrail.
 - See `docs/plans/2026-06-09-source-output-file-handle-cleanup.md` for the
   source output file-handle cleanup guardrail.
 - See `docs/plans/2026-06-09-output-subfolder-validation.md` for the updater
