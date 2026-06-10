@@ -2,6 +2,8 @@
 
 ## 2026-06-10
 
+- Rejected malformed upstream hostnames before they can become generated block
+  rules while preserving valid mixed-case and `www` domains.
 - Required updater source payload URLs to use HTTPS and migrated the remaining
   plain-HTTP source metadata to working TLS endpoints.
 - Added offline baseline coverage proving insecure source URLs are rejected

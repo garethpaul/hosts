@@ -33,6 +33,8 @@ Helpful reports include:
 - Review found infrastructure, deployment, proxy, or cloud configuration; changes in those areas should receive security-focused review before merge.
 - No primary dependency manifest was detected in the repository root. If dependencies are added later, include a manifest and prefer reproducible installation instructions.
 - Hosts false positives can block important services, updates, account recovery, payments, or safety-critical communication. Reports about overbroad domains should include the affected domain, source metadata when known, and the user impact.
+- Reject malformed upstream DNS labels before they are normalized into the
+  generated hosts file.
 - `updateFile.py` can fetch remote source lists and can replace the local hosts file through privileged `sudo` operations when replacement options are used. Treat changes to source URLs, source metadata, subprocess calls, backup behavior, and DNS flush logic as security-sensitive.
 - Source URLs must use HTTPS so source payloads are authenticated in transit;
   informational home and issue links remain provenance metadata rather than

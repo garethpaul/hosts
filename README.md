@@ -99,6 +99,9 @@ When the required SDK or runtime is unavailable, use static checks and source re
 - Review changes touching infrastructure, proxy, cloud, or deployment configuration; examples from the scan include readmeData.json.
 - Treat false positives as security and reliability issues: an overbroad entry can block account recovery, updates, payments, or other important services.
 - Source URLs require HTTPS schemes and hosts before the updater fetches them.
+- Upstream entries are normalized only when their hostnames use valid DNS
+  labels; underscores, empty labels, and leading or trailing hyphens are
+  rejected, as are overlong labels or names.
 - Output subfolders must stay inside the repository before generated hosts data
   is written.
 - `updateFile.py --replace` and DNS flush behavior can affect the local machine's `/etc/hosts`; review generated output and keep backups before privileged replacement.
@@ -121,6 +124,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
   source output file-handle cleanup guardrail.
 - See `docs/plans/2026-06-09-output-subfolder-validation.md` for the updater
   output subfolders guardrail.
+- See `docs/plans/2026-06-10-source-hostname-validation.md` for malformed
+  upstream hostname rejection.
 - See `docs/plans/2026-06-09-make-gate-aliases.md` for the local gate alias guardrail.
 - Run `make lint`, `make test`, `make build`, and `make check` before pushing changes to `hosts`, `readmeData.json`, updater code, or source metadata.
 

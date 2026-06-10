@@ -705,6 +705,10 @@ def normalize_rule(rule, target_ip, keep_domain_comments):
 
         # Explicitly lowercase and trim the hostname.
         hostname = hostname.lower().strip()
+        if not is_valid_source_hostname(hostname):
+            print("==>%s<==" % rule)
+            return None, None
+
         rule = "%s %s" % (target_ip, hostname)
 
         if suffix and keep_domain_comments:
@@ -714,6 +718,18 @@ def normalize_rule(rule, target_ip, keep_domain_comments):
 
     print("==>%s<==" % rule)
     return None, None
+
+
+def is_valid_source_hostname(hostname):
+    """Return whether an upstream hosts entry contains a valid DNS name."""
+
+    if len(hostname) > 253 or any(len(label) > 63 for label in hostname.split(".")):
+        return False
+
+    hostname_format_regex = re.compile(
+        r"^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+"
+        r"[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?$")
+    return bool(hostname_format_regex.match(hostname))
 
 
 def strip_rule(line):

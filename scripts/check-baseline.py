@@ -21,6 +21,7 @@ SOURCE_URL_HTTPS_PLAN = ROOT / "docs/plans/2026-06-10-source-url-https.md"
 SOURCE_OUTPUT_PLAN = ROOT / "docs/plans/2026-06-09-source-output-file-handle-cleanup.md"
 EXCLUSION_CASE_PLAN = ROOT / "docs/plans/2026-06-09-exclusion-domain-case-normalization.md"
 OUTPUT_PATH_PLAN = ROOT / "docs/plans/2026-06-09-output-subfolder-validation.md"
+SOURCE_HOSTNAME_PLAN = ROOT / "docs/plans/2026-06-10-source-hostname-validation.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -128,6 +129,35 @@ def check_output_subfolder_validation(failures):
 
     for output_path in ["../outside", "generated/../outside", "/tmp/hosts", r"C:\hosts", r"\windows\hosts", r"\\server\share"]:
         require(not validator(output_path), f"--output should reject unsafe subfolder {output_path}", failures)
+
+
+def check_source_hostname_validation(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    normalize = namespace["normalize_rule"]
+    with contextlib.redirect_stdout(io.StringIO()):
+        hostname, rule = normalize("0.0.0.0 WWW.Example.COM", "0.0.0.0", False)
+        require(hostname == "www.example.com" and rule == "0.0.0.0 www.example.com\n",
+                "normalize_rule must preserve valid source hostnames in lowercase",
+                failures)
+
+        for invalid_hostname in [
+                "bad_domain.com", "example..com", "-example.com", "example-.com",
+                "a" * 64 + ".com", ("a" * 63 + ".") * 4 + "com"]:
+            hostname, rule = normalize(
+                "0.0.0.0 " + invalid_hostname, "0.0.0.0", False)
+            require(hostname is None and rule is None,
+                    f"normalize_rule must reject malformed source hostname {invalid_hostname}",
+                    failures)
 
 
 def check_source_fetch_closes_response(failures):
@@ -422,6 +452,7 @@ def main():
         "docs/plans/2026-06-09-source-output-file-handle-cleanup.md",
         "docs/plans/2026-06-09-exclusion-domain-case-normalization.md",
         "docs/plans/2026-06-09-output-subfolder-validation.md",
+        "docs/plans/2026-06-10-source-hostname-validation.md",
     ]
 
     for relative_path in required_files:
@@ -432,6 +463,7 @@ def main():
     check_exclusion_regex_escaping(failures)
     check_exclusion_domain_validation(failures)
     check_output_subfolder_validation(failures)
+    check_source_hostname_validation(failures)
     check_source_fetch_closes_response(failures)
     check_source_fetch_requires_https_host(failures)
     check_source_data_files_close_on_parse_failure(failures)
@@ -465,6 +497,9 @@ def main():
     require("is_safe_output_subfolder" in updater and "parser.error(\"--output must be a relative subfolder without parent traversal\")" in updater,
             "updateFile.py must reject unsafe output subfolders before writing generated hosts files",
             failures)
+    require("is_valid_source_hostname(hostname)" in updater and "hostname_format_regex" in updater,
+            "updateFile.py must reject malformed upstream hostnames before output",
+            failures)
     require("shell=True" not in updater,
             "updateFile.py must not use shell=True for privileged commands",
             failures)
@@ -486,6 +521,7 @@ def main():
     source_output_plan = SOURCE_OUTPUT_PLAN.read_text(encoding="utf-8") if SOURCE_OUTPUT_PLAN.exists() else ""
     exclusion_case_plan = EXCLUSION_CASE_PLAN.read_text(encoding="utf-8") if EXCLUSION_CASE_PLAN.exists() else ""
     output_path_plan = OUTPUT_PATH_PLAN.read_text(encoding="utf-8") if OUTPUT_PATH_PLAN.exists() else ""
+    source_hostname_plan = SOURCE_HOSTNAME_PLAN.read_text(encoding="utf-8") if SOURCE_HOSTNAME_PLAN.exists() else ""
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
             failures)
@@ -536,6 +572,9 @@ def main():
             failures)
     require("status: completed" in output_path_plan,
             "output subfolder validation plan must be marked completed",
+            failures)
+    require("status: completed" in source_hostname_plan and "make check" in source_hostname_plan,
+            "source hostname validation plan must be completed and record verification",
             failures)
 
     if failures:

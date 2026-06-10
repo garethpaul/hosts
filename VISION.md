@@ -21,6 +21,7 @@ Priority:
 - Keep generated hosts data and README metadata aligned
 - Avoid silently adding sources with unclear ownership or issue paths
 - Treat false positives as real user-impacting defects
+- Reject malformed upstream DNS labels before generating blocking rules
 - Keep `scripts/check-baseline.py` passing for hosts syntax, generated counts,
   duplicate scope, JSON metadata, updater syntax, and custom exclusion escaping
 - Keep custom exclusion inputs limited to plain domains before regex compilation
