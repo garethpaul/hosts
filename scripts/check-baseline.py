@@ -716,8 +716,25 @@ jobs:
     require("status: completed" in ci_policy_plan and "hostile workflow mutations" in ci_policy_plan.lower(),
             "CI policy plan must record completed mutation verification",
             failures)
-    require("status: completed" in atomic_refresh_plan and "temporary-file" in atomic_refresh_plan.lower(),
-            "atomic source refresh plan must record completed mutation verification",
+    atomic_refresh_statuses = re.findall(
+        r"^status: .+$", atomic_refresh_plan, flags=re.MULTILINE
+    )
+    atomic_refresh_sections = atomic_refresh_plan.split("## Verification Completed\n", 1)
+    atomic_refresh_verification = (
+        atomic_refresh_sections[1] if len(atomic_refresh_sections) == 2 else ""
+    )
+    atomic_refresh_required_evidence = (
+        "All four Make gates",
+        "push run `27394221497`",
+        "pull-request run `27394225763`",
+        "push run `27394241606`",
+        "CodeQL setup run `27402322510`",
+        "Mutations restoring direct destination writes",
+    )
+    require(atomic_refresh_statuses == ["status: completed"]
+            and all(item in atomic_refresh_verification for item in atomic_refresh_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b", atomic_refresh_verification, re.IGNORECASE) is None,
+            "atomic source refresh plan must record completed status and actual verification",
             failures)
 
     if failures:
