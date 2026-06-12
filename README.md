@@ -12,6 +12,7 @@ This README is based on the checked-in source, manifests, scripts, and repositor
 ## Repository Contents
 
 - `CHANGES.md` - concise history of maintenance changes
+- `.github/workflows/check.yml` - CI baseline that runs the static Make gate
 - `Makefile` - local verification entry point
 - `README.md` - project overview and local usage notes
 - `SECURITY.md` - security reporting and disclosure guidance
@@ -83,6 +84,9 @@ building source data. Source output file handles are checked so generated hosts
 files close even when source writes fail.
 Output subfolders are checked so updater writes cannot target paths outside the
 repository through absolute paths or parent traversal.
+GitHub Actions runs the same no-network `make check` gate through
+`.github/workflows/check.yml` on pushes and pull requests using Python 3.10,
+3.12, and 3.14 with read-only permissions and no persisted checkout credential.
 
 When the required SDK or runtime is unavailable, use static checks and source review first, then verify on a machine that has the matching platform toolchain.
 
@@ -99,6 +103,9 @@ When the required SDK or runtime is unavailable, use static checks and source re
 - Review changes touching infrastructure, proxy, cloud, or deployment configuration; examples from the scan include readmeData.json.
 - Treat false positives as security and reliability issues: an overbroad entry can block account recovery, updates, payments, or other important services.
 - Source URLs require HTTPS schemes and hosts before the updater fetches them.
+- Source URLs must not contain credentials, IP literals, whitespace, malformed
+  ports, or invalid DNS labels; redirects must remain inside the same policy.
+- Source responses are limited to 32 MiB and retain the 30-second timeout.
 - Upstream entries are normalized only when their hostnames use valid DNS
   labels; underscores, empty labels, and leading or trailing hyphens are
   rejected, as are overlong labels or names.
@@ -124,8 +131,15 @@ When the required SDK or runtime is unavailable, use static checks and source re
   source output file-handle cleanup guardrail.
 - See `docs/plans/2026-06-09-output-subfolder-validation.md` for the updater
   output subfolders guardrail.
+- See `docs/plans/2026-06-10-source-url-https.md` for the HTTPS source URL
+  baseline.
+- See `docs/plans/2026-06-10-ci-baseline.md` for the lightweight CI baseline.
 - See `docs/plans/2026-06-10-source-hostname-validation.md` for malformed
   upstream hostname rejection.
+- See `docs/plans/2026-06-12-source-network-boundary.md` for redirect, authority,
+  timeout, and response-size boundaries.
+- See `docs/plans/2026-06-12-ci-policy-hardening.md` for canonical hosted
+  workflow enforcement.
 - See `docs/plans/2026-06-09-make-gate-aliases.md` for the local gate alias guardrail.
 - Run `make lint`, `make test`, `make build`, and `make check` before pushing changes to `hosts`, `readmeData.json`, updater code, or source metadata.
 

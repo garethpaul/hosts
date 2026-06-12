@@ -22,11 +22,11 @@ import json
 PY3 = sys.version_info >= (3, 0)
 
 if PY3:
-    from urllib.request import urlopen
+    from urllib.request import build_opener, HTTPRedirectHandler
     from urllib.parse import urlparse
     raw_input = input
 else:  # Python 2
-    from urllib2 import urlopen
+    from urllib2 import build_opener, HTTPRedirectHandler
     from urlparse import urlparse
     raw_input = raw_input  # noqa
 
@@ -35,6 +35,8 @@ SUDO = "/usr/bin/sudo"
 
 # Project Settings
 BASEDIR_PATH = os.path.dirname(os.path.realpath(__file__))
+SOURCE_DOWNLOAD_TIMEOUT_SECONDS = 30
+MAX_SOURCE_DOWNLOAD_BYTES = 32 * 1024 * 1024
 
 
 def get_defaults():
@@ -732,6 +734,38 @@ def is_valid_source_hostname(hostname):
     return bool(hostname_format_regex.match(hostname))
 
 
+def is_valid_source_url(url):
+    """Return whether a source URL is credential-free HTTPS with a DNS host."""
+
+    try:
+        parsed_url = urlparse(url)
+        hostname = parsed_url.hostname
+        parsed_url.port
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+    return (parsed_url.scheme == "https" and hostname is not None and
+            parsed_url.username is None and parsed_url.password is None and
+            not any(character.isspace() for character in url) and
+            is_valid_source_hostname(hostname))
+
+
+class HTTPSOnlyRedirectHandler(HTTPRedirectHandler):
+    """Reject source redirects that leave the validated HTTPS boundary."""
+
+    def redirect_request(self, request, response, code, message, headers, new_url):
+        if not is_valid_source_url(new_url):
+            raise ValueError("source redirect must use credential-free HTTPS with a valid host")
+        return super(HTTPSOnlyRedirectHandler, self).redirect_request(
+            request, response, code, message, headers, new_url)
+
+
+def open_source_url(url, timeout):
+    """Open a source URL with HTTPS-only redirect handling."""
+
+    return build_opener(HTTPSOnlyRedirectHandler()).open(url, timeout=timeout)
+
+
 def strip_rule(line):
     """
     Sanitize a rule string provided before writing it to the output hosts file.
@@ -1016,16 +1050,21 @@ def get_file_by_url(url):
     """
 
     try:
-        parsed_url = urlparse(url)
-        if parsed_url.scheme != "https" or not parsed_url.netloc:
-            raise ValueError("source URL must use HTTPS with a host: " + url)
-        f = urlopen(url, timeout=30)
+        if not is_valid_source_url(url):
+            raise ValueError("source URL must use credential-free HTTPS with a valid host")
+        f = open_source_url(url, timeout=SOURCE_DOWNLOAD_TIMEOUT_SECONDS)
         try:
-            return f.read().decode("UTF-8")
+            final_url = f.geturl() if hasattr(f, "geturl") else url
+            if not is_valid_source_url(final_url):
+                raise ValueError("source response URL left the validated HTTPS boundary")
+            source_data = f.read(MAX_SOURCE_DOWNLOAD_BYTES + 1)
+            if len(source_data) > MAX_SOURCE_DOWNLOAD_BYTES:
+                raise ValueError("source response exceeds the download size limit")
+            return source_data.decode("UTF-8")
         finally:
             f.close()
     except Exception as error:
-        print("Problem getting file: {0} ({1})".format(url, error))
+        print("Problem getting source file: {0}".format(error))
 
 
 def write_data(f, data):

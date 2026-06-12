@@ -26,3 +26,5 @@ available over HTTPS.
 - `make build`
 - `make check`
 - `git diff --check`
+- `curl -L -I --max-time 15 https://someonewhocares.org/hosts/zero/hosts`
+- `curl -L -I --max-time 15 https://winhelp2002.mvps.org/hosts.txt`

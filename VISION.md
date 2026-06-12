@@ -30,6 +30,8 @@ Priority:
 - Keep output subfolders inside the repository before generated hosts writes
 - Keep `make lint`, `make test`, `make build`, and `make check` available as
   local verification gates
+- Keep GitHub Actions running the no-network `make check` baseline
+- Keep source redirects HTTPS-only and source responses bounded to 32 MiB
 
 Next priorities:
 
@@ -62,6 +64,8 @@ metadata JSON, duplicate handling, generated rule count, and legacy updater
 syntax without fetching remote source lists or replacing the local `/etc/hosts`
 file. The updater guardrails also cover HTTPS-only source fetches, fetch
 timeouts, response cleanup, source URLs use HTTPS and include hosts, and source metadata file handles.
+Source authorities reject credentials, IP literals, malformed ports, and
+invalid DNS labels before network access; redirects remain inside that policy.
 Source output file handles close on write failures during source refreshes.
 Output subfolders are constrained to relative paths within the repository.
 Custom exclusions are normalized to lowercase before matching generated hosts.

@@ -39,9 +39,14 @@ Helpful reports include:
 - Source URLs must use HTTPS so source payloads are authenticated in transit;
   informational home and issue links remain provenance metadata rather than
   updater fetch targets.
+- Source fetches reject credentials, IP literals, malformed authorities, and
+  HTTPS redirects that leave the validated DNS-host boundary. Responses retain
+  a 30-second timeout and a 32 MiB read limit.
 - Output subfolders should stay inside the repository tree so generated hosts
   writes cannot escape through absolute paths or parent traversal.
 - `make check` runs the static baseline for hosts syntax, generated counts, duplicate scope, JSON metadata, and Python updater syntax without network access or local hosts replacement. It also checks HTTPS source URLs, host validation, timeouts, response cleanup, and source output file handles.
+- Hosted validation is read-only, uses immutable actions without persisted
+  checkout credentials, and runs no network-fetch or privileged updater path.
 
 ## Service and API Notes
 
