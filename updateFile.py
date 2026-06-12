@@ -561,10 +561,10 @@ def update_all_sources(source_data_filename, host_filename):
             # get rid of carriage-return symbols
             updated_file = updated_file.replace("\r", "")
 
-            with open(path_join_robust(BASEDIR_PATH,
-                                       os.path.dirname(source),
-                                       host_filename), "wb") as hosts_file:
-                write_data(hosts_file, updated_file)
+            destination = path_join_robust(BASEDIR_PATH,
+                                           os.path.dirname(source),
+                                           host_filename)
+            write_source_file_atomically(destination, updated_file)
         except Exception:
             print("Error in updating source: ", update_url)
 # End Update Logic
@@ -1033,6 +1033,35 @@ def remove_old_hosts_file(backup):
 
 
 # Helper Functions
+def write_source_file_atomically(destination, data):
+    """Replace a cached source file only after its new data is durable."""
+
+    destination_directory = os.path.dirname(destination) or "."
+    destination_mode = 0o644
+    if os.path.exists(destination):
+        destination_mode = os.stat(destination).st_mode & 0o777
+
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+                mode="wb", dir=destination_directory,
+                prefix=".hosts-refresh-", delete=False) as temporary_file:
+            temporary_path = temporary_file.name
+            write_data(temporary_file, data)
+            temporary_file.flush()
+            os.chmod(temporary_path, destination_mode)
+            os.fsync(temporary_file.fileno())
+
+        os.replace(temporary_path, destination)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            try:
+                os.remove(temporary_path)
+            except OSError:
+                pass
+
+
 def get_file_by_url(url):
     """
     Get a file data located at a particular URL.

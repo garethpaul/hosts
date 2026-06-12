@@ -13,6 +13,8 @@
   source URLs, and limited each source response to 32 MiB.
 - Pinned the read-only Python 3.10/3.12/3.14 workflow, disabled persisted
   checkout credentials, enforced its full shape, and added CODEOWNERS.
+- Made source refreshes atomic so failed writes preserve the last known-good
+  cached hosts data and remove incomplete temporary files.
 ## 2026-06-09
 
 - Validated updater output subfolders so generated hosts writes stay inside the
