@@ -17,11 +17,14 @@ MAKE_GATES_PLAN = ROOT / "docs/plans/2026-06-09-make-gate-aliases.md"
 FETCH_PLAN = ROOT / "docs/plans/2026-06-09-source-fetch-response-cleanup.md"
 SOURCE_DATA_PLAN = ROOT / "docs/plans/2026-06-09-source-data-file-handle-cleanup.md"
 SOURCE_URL_HOST_PLAN = ROOT / "docs/plans/2026-06-09-source-url-host-validation.md"
+SOURCE_URL_HTTPS_PLAN = ROOT / "docs/plans/2026-06-10-source-url-https.md"
 SOURCE_OUTPUT_PLAN = ROOT / "docs/plans/2026-06-09-source-output-file-handle-cleanup.md"
 EXCLUSION_CASE_PLAN = ROOT / "docs/plans/2026-06-09-exclusion-domain-case-normalization.md"
 OUTPUT_PATH_PLAN = ROOT / "docs/plans/2026-06-09-output-subfolder-validation.md"
-SOURCE_URL_HTTPS_PLAN = ROOT / "docs/plans/2026-06-10-source-url-https.md"
 CI_PLAN = ROOT / "docs/plans/2026-06-10-ci-baseline.md"
+SOURCE_HOSTNAME_PLAN = ROOT / "docs/plans/2026-06-10-source-hostname-validation.md"
+NETWORK_BOUNDARY_PLAN = ROOT / "docs/plans/2026-06-12-source-network-boundary.md"
+CI_POLICY_PLAN = ROOT / "docs/plans/2026-06-12-ci-policy-hardening.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -131,6 +134,36 @@ def check_output_subfolder_validation(failures):
         require(not validator(output_path), f"--output should reject unsafe subfolder {output_path}", failures)
 
 
+def check_source_hostname_validation(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    normalize = namespace["normalize_rule"]
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        hostname, rule = normalize("0.0.0.0 WWW.Example.COM", "0.0.0.0", False)
+        require(hostname == "www.example.com" and rule == "0.0.0.0 www.example.com\n",
+                "normalize_rule must preserve valid source hostnames in lowercase",
+                failures)
+
+        for invalid_hostname in [
+                "bad_domain.com", "example..com", "-example.com", "example-.com",
+                "a" * 64 + ".com", ("a" * 63 + ".") * 4 + "com"]:
+            hostname, rule = normalize(
+                "0.0.0.0 " + invalid_hostname, "0.0.0.0", False)
+            require(hostname is None and rule is None,
+                    f"normalize_rule must reject malformed source hostname {invalid_hostname}",
+                    failures)
+
+
 def check_source_fetch_closes_response(failures):
     namespace = {
         "__file__": str(ROOT / "updateFile.py"),
@@ -147,20 +180,26 @@ def check_source_fetch_closes_response(failures):
         def __init__(self):
             self.closed = False
 
-        def read(self):
+        def read(self, size=-1):
+            require(size == namespace["MAX_SOURCE_DOWNLOAD_BYTES"] + 1,
+                    "get_file_by_url must bound source response reads", failures)
             return b"0.0.0.0 example.test\n"
+
+        def geturl(self):
+            return "https://example.test/hosts"
 
         def close(self):
             self.closed = True
 
     response = FakeResponse()
 
-    def fake_urlopen(url, timeout):
+    def fake_open_source_url(url, timeout):
         require(url == "https://example.test/hosts", "get_file_by_url must fetch the requested URL", failures)
-        require(timeout == 30, "get_file_by_url must keep the 30-second timeout", failures)
+        require(timeout == namespace["SOURCE_DOWNLOAD_TIMEOUT_SECONDS"],
+                "get_file_by_url must keep the bounded timeout", failures)
         return response
 
-    namespace["urlopen"] = fake_urlopen
+    namespace["open_source_url"] = fake_open_source_url
     result = namespace["get_file_by_url"]("https://example.test/hosts")
     require(result == "0.0.0.0 example.test\n",
             "get_file_by_url must decode fetched host data",
@@ -170,7 +209,7 @@ def check_source_fetch_closes_response(failures):
             failures)
 
 
-def check_source_fetch_requires_host(failures):
+def check_source_fetch_requires_https_host(failures):
     namespace = {
         "__file__": str(ROOT / "updateFile.py"),
         "__name__": "hosts_updatefile_baseline",
@@ -184,16 +223,71 @@ def check_source_fetch_requires_host(failures):
 
     attempted_fetches = []
 
-    def fake_urlopen(url, timeout):
+    def fake_open_source_url(url, timeout):
         attempted_fetches.append((url, timeout))
         raise AssertionError("malformed source URL should not be fetched")
 
-    namespace["urlopen"] = fake_urlopen
-    with contextlib.redirect_stdout(io.StringIO()):
-        namespace["get_file_by_url"]("https://")
+    namespace["open_source_url"] = fake_open_source_url
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        for invalid_url in [
+                "https://", "http://example.test/hosts",
+                "https://user:secret@example.test/hosts",
+                "https://user@:443/hosts", "https://bad_.example/hosts",
+                "https://example.test:bad/hosts", "https://127.0.0.1/hosts",
+                "https://example.test/host list"]:
+            namespace["get_file_by_url"](invalid_url)
     require(not attempted_fetches,
-            "get_file_by_url must reject HTTP(S) source URLs without a host before fetching",
+            "get_file_by_url must reject malformed or untrusted source URLs before fetching",
             failures)
+    require("secret" not in output.getvalue(),
+            "rejected source URLs must not expose embedded credentials in logs",
+            failures)
+
+
+def check_source_redirect_and_size_boundaries(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    handler = namespace["HTTPSOnlyRedirectHandler"]()
+    for invalid_redirect in [
+            "http://example.test/hosts", "https://user@example.test/hosts",
+            "https://127.0.0.1/hosts"]:
+        try:
+            handler.redirect_request(None, None, 302, "Found", {}, invalid_redirect)
+        except ValueError:
+            pass
+        else:
+            failures.append(f"source redirect must reject {invalid_redirect}")
+
+    class OversizedResponse:
+        def __init__(self):
+            self.closed = False
+
+        def geturl(self):
+            return "https://example.test/hosts"
+
+        def read(self, size=-1):
+            return b"x" * size
+
+        def close(self):
+            self.closed = True
+
+    response = OversizedResponse()
+    namespace["MAX_SOURCE_DOWNLOAD_BYTES"] = 4
+    namespace["open_source_url"] = lambda url, timeout: response
+    with contextlib.redirect_stdout(io.StringIO()):
+        result = namespace["get_file_by_url"]("https://example.test/hosts")
+    require(result is None, "oversized source responses must fail closed", failures)
+    require(response.closed, "oversized source responses must still close", failures)
 
 
 def check_source_data_files_close_on_parse_failure(failures):
@@ -367,6 +461,17 @@ def check_readme_data(failures):
     require(isinstance(data, dict), "readmeData.json root must be an object", failures)
     require(len(data) >= 16, "readmeData.json must keep the known alternate metadata sets", failures)
 
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    try:
+        exec(compile(read("updateFile.py"), str(ROOT / "updateFile.py"), "exec"), namespace)
+        source_url_is_valid = namespace["is_valid_source_url"]
+    except Exception as error:
+        failures.append(f"updateFile.py source URL validator must load: {error}")
+        return
+
     source_refs = 0
     for config_name, metadata in data.items():
         require(isinstance(metadata, dict), f"{config_name} metadata must be an object", failures)
@@ -382,9 +487,8 @@ def check_readme_data(failures):
                 require(field in source, f"{config_name} source is missing {field}", failures)
 
             source_url = source.get("url", "")
-            parsed_source_url = urlparse(source_url)
-            require(parsed_source_url.scheme == "https" and parsed_source_url.netloc,
-                    f"{config_name}/{source.get('name', '<unnamed>')} url must be HTTPS with a host: {source_url}",
+            require(source_url_is_valid(source_url),
+                    f"{config_name}/{source.get('name', '<unnamed>')} url must be credential-free HTTPS with a valid DNS host: {source_url}",
                     failures)
 
             for field in ["homeurl", "issues"]:
@@ -401,8 +505,10 @@ def check_readme_data(failures):
 def main():
     failures = []
     required_files = [
+        ".github/CODEOWNERS",
         ".gitignore",
         ".github/workflows/check.yml",
+        "AGENTS.md",
         "CHANGES.md",
         "Makefile",
         "README.md",
@@ -419,11 +525,14 @@ def main():
         "docs/plans/2026-06-09-source-fetch-response-cleanup.md",
         "docs/plans/2026-06-09-source-data-file-handle-cleanup.md",
         "docs/plans/2026-06-09-source-url-host-validation.md",
+        "docs/plans/2026-06-10-source-url-https.md",
         "docs/plans/2026-06-09-source-output-file-handle-cleanup.md",
         "docs/plans/2026-06-09-exclusion-domain-case-normalization.md",
         "docs/plans/2026-06-09-output-subfolder-validation.md",
-        "docs/plans/2026-06-10-source-url-https.md",
         "docs/plans/2026-06-10-ci-baseline.md",
+        "docs/plans/2026-06-10-source-hostname-validation.md",
+        "docs/plans/2026-06-12-source-network-boundary.md",
+        "docs/plans/2026-06-12-ci-policy-hardening.md",
     ]
 
     for relative_path in required_files:
@@ -434,18 +543,22 @@ def main():
     check_exclusion_regex_escaping(failures)
     check_exclusion_domain_validation(failures)
     check_output_subfolder_validation(failures)
+    check_source_hostname_validation(failures)
     check_source_fetch_closes_response(failures)
-    check_source_fetch_requires_host(failures)
+    check_source_fetch_requires_https_host(failures)
+    check_source_redirect_and_size_boundaries(failures)
     check_source_data_files_close_on_parse_failure(failures)
     check_source_output_files_close_on_write_failure(failures)
     check_hosts_file(failures)
     check_readme_data(failures)
 
     updater = read("updateFile.py")
-    require("urlparse(url)" in updater and 'parsed_url.scheme not in ("http", "https") or not parsed_url.netloc' in updater,
-            "updateFile.py must reject unsupported source URL schemes and missing hosts",
+    require("def is_valid_source_url" in updater and "HTTPSOnlyRedirectHandler" in updater and
+            "MAX_SOURCE_DOWNLOAD_BYTES = 32 * 1024 * 1024" in updater and
+            "SOURCE_DOWNLOAD_TIMEOUT_SECONDS = 30" in updater,
+            "updateFile.py must enforce strict HTTPS source and response boundaries",
             failures)
-    require("urlopen(url, timeout=30)" in updater,
+    require("open_source_url(url, timeout=SOURCE_DOWNLOAD_TIMEOUT_SECONDS)" in updater,
             "updateFile.py must fetch source URLs with a timeout",
             failures)
     require('with open(source, "r") as update_file:' in updater and
@@ -467,6 +580,9 @@ def main():
     require("is_safe_output_subfolder" in updater and "parser.error(\"--output must be a relative subfolder without parent traversal\")" in updater,
             "updateFile.py must reject unsafe output subfolders before writing generated hosts files",
             failures)
+    require("is_valid_source_hostname(hostname)" in updater and "hostname_format_regex" in updater,
+            "updateFile.py must reject malformed upstream hostnames before output",
+            failures)
     require("shell=True" not in updater,
             "updateFile.py must not use shell=True for privileged commands",
             failures)
@@ -484,25 +600,68 @@ def main():
     fetch_plan = FETCH_PLAN.read_text(encoding="utf-8") if FETCH_PLAN.exists() else ""
     source_data_plan = SOURCE_DATA_PLAN.read_text(encoding="utf-8") if SOURCE_DATA_PLAN.exists() else ""
     source_url_host_plan = SOURCE_URL_HOST_PLAN.read_text(encoding="utf-8") if SOURCE_URL_HOST_PLAN.exists() else ""
+    source_url_https_plan = SOURCE_URL_HTTPS_PLAN.read_text(encoding="utf-8") if SOURCE_URL_HTTPS_PLAN.exists() else ""
     source_output_plan = SOURCE_OUTPUT_PLAN.read_text(encoding="utf-8") if SOURCE_OUTPUT_PLAN.exists() else ""
     exclusion_case_plan = EXCLUSION_CASE_PLAN.read_text(encoding="utf-8") if EXCLUSION_CASE_PLAN.exists() else ""
     output_path_plan = OUTPUT_PATH_PLAN.read_text(encoding="utf-8") if OUTPUT_PATH_PLAN.exists() else ""
-    source_url_https_plan = SOURCE_URL_HTTPS_PLAN.read_text(encoding="utf-8") if SOURCE_URL_HTTPS_PLAN.exists() else ""
     ci_plan = CI_PLAN.read_text(encoding="utf-8") if CI_PLAN.exists() else ""
     workflow = read(".github/workflows/check.yml")
+    source_hostname_plan = SOURCE_HOSTNAME_PLAN.read_text(encoding="utf-8") if SOURCE_HOSTNAME_PLAN.exists() else ""
+    network_boundary_plan = NETWORK_BOUNDARY_PLAN.read_text(encoding="utf-8") if NETWORK_BOUNDARY_PLAN.exists() else ""
+    ci_policy_plan = CI_POLICY_PLAN.read_text(encoding="utf-8") if CI_POLICY_PLAN.exists() else ""
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
             failures)
-    require("actions/checkout@v4" in workflow and "actions/setup-python@v5" in workflow and "make check" in workflow,
-            "GitHub Actions must run make check on a supported Python version",
-            failures)
-    require("make lint" in readme and "make test" in readme and "make build" in readme and "make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "lowercase" in readme.lower() and "response cleanup" in readme.lower() and "source metadata file handles" in readme.lower() and "source output file handles" in readme.lower() and "source urls require https" in readme.lower() and "GitHub Actions" in readme and "output subfolders" in readme.lower(),
+    expected_workflow = """name: Check
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [\"3.10\", \"3.12\", \"3.14\"]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run baseline
+        run: make check
+"""
+    workflow_files = sorted((ROOT / ".github/workflows").glob("*"))
+    require(workflow_files == [ROOT / ".github/workflows/check.yml"],
+            "check.yml must remain the only hosted workflow", failures)
+    require(workflow == expected_workflow,
+            "GitHub Actions must match the canonical credential-free Python matrix", failures)
+    require(read(".github/CODEOWNERS") == "* @garethpaul\n",
+            "CODEOWNERS must assign repository-wide ownership", failures)
+    require("make lint" in readme and "make test" in readme and "make build" in readme and "make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "lowercase" in readme.lower() and "response cleanup" in readme.lower() and "source metadata file handles" in readme.lower() and "source output file handles" in readme.lower() and "source urls require https schemes and hosts" in readme.lower() and "GitHub Actions" in readme and "output subfolders" in readme.lower(),
             "README must document static verification, source metadata, and updater usage",
             failures)
-    require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "lowercase" in vision.lower() and "response cleanup" in vision.lower() and "source metadata file handles" in vision.lower() and "source output file handles" in vision.lower() and "source urls use https" in vision.lower() and "GitHub Actions" in vision and "output subfolders" in vision.lower(),
+    require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "lowercase" in vision.lower() and "response cleanup" in vision.lower() and "source metadata file handles" in vision.lower() and "source output file handles" in vision.lower() and "source urls use https" in vision.lower() and "include hosts" in vision.lower() and "GitHub Actions" in vision and "output subfolders" in vision.lower(),
             "VISION must describe baseline validation and provenance guardrails",
             failures)
-    require("false positive" in security.lower() and "source metadata" in security.lower() and "response cleanup" in security.lower() and "source output file handles" in security.lower() and "source urls" in security.lower() and "https" in security.lower() and "output subfolders" in security.lower(),
+    require("false positive" in security.lower() and "source metadata" in security.lower() and "response cleanup" in security.lower() and "source output file handles" in security.lower() and "source urls must use https" in security.lower() and "output subfolders" in security.lower(),
             "SECURITY must document false-positive and source metadata review expectations",
             failures)
     require("GitHub Actions" in changes and "https source" in changes.lower() and "timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "lowercase" in changes.lower() and "response" in changes.lower() and "source metadata file handles" in changes.lower() and "source output file handles" in changes.lower() and "source urls" in changes.lower() and "output subfolders" in changes.lower() and "make lint" in changes and "make test" in changes and "make build" in changes,
@@ -532,6 +691,9 @@ def main():
     require("status: completed" in source_url_host_plan,
             "source URL host validation plan must be marked completed",
             failures)
+    require("status: completed" in source_url_https_plan,
+            "source URL HTTPS plan must be marked completed",
+            failures)
     require("status: completed" in source_output_plan,
             "source output file-handle cleanup plan must be marked completed",
             failures)
@@ -541,11 +703,17 @@ def main():
     require("status: completed" in output_path_plan,
             "output subfolder validation plan must be marked completed",
             failures)
-    require("status: completed" in source_url_https_plan,
-            "source URL HTTPS plan must be marked completed",
-            failures)
     require("status: completed" in ci_plan,
             "CI baseline plan must be marked completed",
+            failures)
+    require("status: completed" in source_hostname_plan and "make check" in source_hostname_plan,
+            "source hostname validation plan must be completed and record verification",
+            failures)
+    require("status: completed" in network_boundary_plan and "hostile network mutations" in network_boundary_plan.lower(),
+            "source network boundary plan must record completed mutation verification",
+            failures)
+    require("status: completed" in ci_policy_plan and "hostile workflow mutations" in ci_policy_plan.lower(),
+            "CI policy plan must record completed mutation verification",
             failures)
 
     if failures:

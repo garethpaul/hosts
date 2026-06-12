@@ -1,25 +1,30 @@
-# Source URL HTTPS Baseline
+# Source URL HTTPS Enforcement
 
 status: completed
 
 ## Context
 
-The portfolio remediation plan calls out active plaintext integrations as a
-high-priority risk. The checked-in source metadata still used `http://` fetch
-URLs for the someonewhocares.org and MVPS hosts sources even though both exact
-paths are available over HTTPS.
+The updater validated source URL schemes and hosts, but still accepted plain
+HTTP for downloaded blocklist payloads. Two providers were repeated across 30
+generated metadata variants using HTTP even though both resources are
+available over HTTPS.
 
 ## Completed Scope
 
-- Replaced active `readmeData.json` source fetch URLs for someonewhocares.org
-  and MVPS with HTTPS URLs.
-- Preserved non-fetching homepage and issue metadata as provenance links.
-- Extended `scripts/check-baseline.py` so future source fetch URLs must use
-  HTTPS.
+- Required `get_file_by_url()` to accept only HTTPS source URLs with hosts.
+- Migrated the remaining source payload references to verified HTTPS endpoints.
+- Kept informational home and issue links outside the fetch restriction.
+- Added side-effect-free baseline coverage proving plain HTTP is rejected
+  before `urlopen` is called.
+- Extended documentation and metadata validation to preserve the HTTPS rule.
 
 ## Verification
 
-- `curl -L -I --max-time 15 https://someonewhocares.org/hosts/zero/hosts`
-- `curl -L -I --max-time 15 https://winhelp2002.mvps.org/hosts.txt`
+- `python3 scripts/check-baseline.py`
+- `make lint`
+- `make test`
+- `make build`
 - `make check`
 - `git diff --check`
+- `curl -L -I --max-time 15 https://someonewhocares.org/hosts/zero/hosts`
+- `curl -L -I --max-time 15 https://winhelp2002.mvps.org/hosts.txt`

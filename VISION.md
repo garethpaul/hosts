@@ -21,16 +21,17 @@ Priority:
 - Keep generated hosts data and README metadata aligned
 - Avoid silently adding sources with unclear ownership or issue paths
 - Treat false positives as real user-impacting defects
+- Reject malformed upstream DNS labels before generating blocking rules
 - Keep `scripts/check-baseline.py` passing for hosts syntax, generated counts,
   duplicate scope, JSON metadata, updater syntax, and custom exclusion escaping
 - Keep custom exclusion inputs limited to plain domains before regex compilation
 - Normalize custom exclusions to lowercase before matching generated hostnames
-- Ensure source URLs include hosts before the updater fetches them
-- Ensure source URLs use HTTPS before the updater fetches them
+- Ensure source URLs use HTTPS and include hosts before the updater fetches them
 - Keep output subfolders inside the repository before generated hosts writes
 - Keep `make lint`, `make test`, `make build`, and `make check` available as
   local verification gates
 - Keep GitHub Actions running the no-network `make check` baseline
+- Keep source redirects HTTPS-only and source responses bounded to 32 MiB
 
 Next priorities:
 
@@ -61,8 +62,10 @@ Current baseline: `make lint`, `make test`, `make build`, and `make check` run
 `scripts/check-baseline.py`, which validates the checked-in hosts snapshot,
 metadata JSON, duplicate handling, generated rule count, and legacy updater
 syntax without fetching remote source lists or replacing the local `/etc/hosts`
-file. The updater guardrails also cover HTTPS source URLs, fetch
-timeouts, response cleanup, source URLs include hosts, and source metadata file handles.
+file. The updater guardrails also cover HTTPS-only source fetches, fetch
+timeouts, response cleanup, source URLs use HTTPS and include hosts, and source metadata file handles.
+Source authorities reject credentials, IP literals, malformed ports, and
+invalid DNS labels before network access; redirects remain inside that policy.
 Source output file handles close on write failures during source refreshes.
 Output subfolders are constrained to relative paths within the repository.
 Custom exclusions are normalized to lowercase before matching generated hosts.

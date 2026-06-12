@@ -2,10 +2,17 @@
 
 ## 2026-06-10
 
-- Replaced active `readmeData.json` source fetch URLs for someonewhocares.org
-  and MVPS with HTTPS source URLs.
+- Rejected malformed upstream hostnames before they can become generated block
+  rules while preserving valid mixed-case and `www` domains.
+- Required updater HTTPS source payload URLs and migrated the remaining
+  plain-HTTP source metadata to working TLS endpoints.
+- Added offline baseline coverage proving insecure source URLs are rejected
+  before a network request is attempted.
 - Added GitHub Actions CI that runs the no-network `make check` baseline.
-
+- Rejected credential-bearing, IP-literal, malformed, and downgrade-redirect
+  source URLs, and limited each source response to 32 MiB.
+- Pinned the read-only Python 3.10/3.12/3.14 workflow, disabled persisted
+  checkout credentials, enforced its full shape, and added CODEOWNERS.
 ## 2026-06-09
 
 - Validated updater output subfolders so generated hosts writes stay inside the

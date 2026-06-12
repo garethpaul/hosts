@@ -2,7 +2,9 @@
 
 ## Repository purpose
 
-`garethpaul/hosts` is a public sample, documentation, or utility project. Blocking Ads and Distractions
+`garethpaul/hosts` maintains a generated hosts-file blocklist and a legacy
+Python updater that downloads, normalizes, filters, and optionally installs
+source lists.
 
 ## Project structure
 
@@ -14,6 +16,9 @@
 
 - Install dependencies: no repository-specific install command is documented.
 - Full baseline: `make check`
+- Lint/static checks: `make lint`
+- Tests: `make test`
+- Build gate: `make build`
 - If a command above skips because a platform toolchain is missing, verify on a machine with that SDK before claiming platform behavior is tested.
 
 ## Coding conventions
@@ -23,7 +28,9 @@
 
 ## Testing guidance
 
-- No dedicated test files were detected; treat `make check` as the minimum baseline.
+- The dependency-free baseline executes focused updater helpers without network
+  access and validates the checked-in hosts snapshot and metadata.
+- Hosted CI runs the baseline on Python 3.10, 3.12, and 3.14.
 - Start with the narrowest relevant test or Make target, then run `make check` before handing off if the change is not documentation-only.
 - Keep README verification notes in sync when commands, fixtures, or supported toolchains change.
 
@@ -42,6 +49,12 @@
 - `updateFile.py --replace` and DNS flush behavior can affect the local machine's `/etc/hosts`; review generated output and keep backups before privileged replacement.
 - See `SECURITY.md` for vulnerability reporting and safe research guidance.
 - See `VISION.md` for project direction and contribution guardrails.
+- Keep source downloads credential-free, HTTPS-only across redirects, bounded
+  to 32 MiB, and protected by the documented timeout.
+- Never run updater replacement or DNS-flush options during automated testing;
+  those paths can invoke privileged system commands.
+- Keep `check.yml` as the sole pinned, read-only workflow without persisted
+  checkout credentials.
 
 ## Agent workflow
 

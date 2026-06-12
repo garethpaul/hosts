@@ -33,10 +33,20 @@ Helpful reports include:
 - Review found infrastructure, deployment, proxy, or cloud configuration; changes in those areas should receive security-focused review before merge.
 - No primary dependency manifest was detected in the repository root. If dependencies are added later, include a manifest and prefer reproducible installation instructions.
 - Hosts false positives can block important services, updates, account recovery, payments, or safety-critical communication. Reports about overbroad domains should include the affected domain, source metadata when known, and the user impact.
-- `updateFile.py` can fetch remote source lists and can replace the local hosts file through privileged `sudo` operations when replacement options are used. Treat changes to source URLs, source metadata, subprocess calls, backup behavior, and DNS flush logic as security-sensitive. Source URLs should use HTTPS before the updater fetches them.
+- Reject malformed upstream DNS labels before they are normalized into the
+  generated hosts file.
+- `updateFile.py` can fetch remote source lists and can replace the local hosts file through privileged `sudo` operations when replacement options are used. Treat changes to source URLs, source metadata, subprocess calls, backup behavior, and DNS flush logic as security-sensitive.
+- Source URLs must use HTTPS so source payloads are authenticated in transit;
+  informational home and issue links remain provenance metadata rather than
+  updater fetch targets.
+- Source fetches reject credentials, IP literals, malformed authorities, and
+  HTTPS redirects that leave the validated DNS-host boundary. Responses retain
+  a 30-second timeout and a 32 MiB read limit.
 - Output subfolders should stay inside the repository tree so generated hosts
   writes cannot escape through absolute paths or parent traversal.
-- `make check` runs the static baseline for hosts syntax, generated counts, duplicate scope, JSON metadata, and Python updater syntax without network access or local hosts replacement. It also checks HTTPS source URLs, source fetch URL schemes, host validation, timeouts, response cleanup, and source output file handles.
+- `make check` runs the static baseline for hosts syntax, generated counts, duplicate scope, JSON metadata, and Python updater syntax without network access or local hosts replacement. It also checks HTTPS source URLs, host validation, timeouts, response cleanup, and source output file handles.
+- Hosted validation is read-only, uses immutable actions without persisted
+  checkout credentials, and runs no network-fetch or privileged updater path.
 
 ## Service and API Notes
 
