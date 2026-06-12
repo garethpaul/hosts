@@ -20,6 +20,8 @@ SOURCE_URL_HOST_PLAN = ROOT / "docs/plans/2026-06-09-source-url-host-validation.
 SOURCE_OUTPUT_PLAN = ROOT / "docs/plans/2026-06-09-source-output-file-handle-cleanup.md"
 EXCLUSION_CASE_PLAN = ROOT / "docs/plans/2026-06-09-exclusion-domain-case-normalization.md"
 OUTPUT_PATH_PLAN = ROOT / "docs/plans/2026-06-09-output-subfolder-validation.md"
+SOURCE_URL_HTTPS_PLAN = ROOT / "docs/plans/2026-06-10-source-url-https.md"
+CI_PLAN = ROOT / "docs/plans/2026-06-10-ci-baseline.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -381,8 +383,8 @@ def check_readme_data(failures):
 
             source_url = source.get("url", "")
             parsed_source_url = urlparse(source_url)
-            require(parsed_source_url.scheme in ("http", "https") and parsed_source_url.netloc,
-                    f"{config_name}/{source.get('name', '<unnamed>')} url must be HTTP(S): {source_url}",
+            require(parsed_source_url.scheme == "https" and parsed_source_url.netloc,
+                    f"{config_name}/{source.get('name', '<unnamed>')} url must be HTTPS with a host: {source_url}",
                     failures)
 
             for field in ["homeurl", "issues"]:
@@ -400,6 +402,7 @@ def main():
     failures = []
     required_files = [
         ".gitignore",
+        ".github/workflows/check.yml",
         "CHANGES.md",
         "Makefile",
         "README.md",
@@ -419,6 +422,8 @@ def main():
         "docs/plans/2026-06-09-source-output-file-handle-cleanup.md",
         "docs/plans/2026-06-09-exclusion-domain-case-normalization.md",
         "docs/plans/2026-06-09-output-subfolder-validation.md",
+        "docs/plans/2026-06-10-source-url-https.md",
+        "docs/plans/2026-06-10-ci-baseline.md",
     ]
 
     for relative_path in required_files:
@@ -482,19 +487,25 @@ def main():
     source_output_plan = SOURCE_OUTPUT_PLAN.read_text(encoding="utf-8") if SOURCE_OUTPUT_PLAN.exists() else ""
     exclusion_case_plan = EXCLUSION_CASE_PLAN.read_text(encoding="utf-8") if EXCLUSION_CASE_PLAN.exists() else ""
     output_path_plan = OUTPUT_PATH_PLAN.read_text(encoding="utf-8") if OUTPUT_PATH_PLAN.exists() else ""
+    source_url_https_plan = SOURCE_URL_HTTPS_PLAN.read_text(encoding="utf-8") if SOURCE_URL_HTTPS_PLAN.exists() else ""
+    ci_plan = CI_PLAN.read_text(encoding="utf-8") if CI_PLAN.exists() else ""
+    workflow = read(".github/workflows/check.yml")
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
             failures)
-    require("make lint" in readme and "make test" in readme and "make build" in readme and "make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "lowercase" in readme.lower() and "response cleanup" in readme.lower() and "source metadata file handles" in readme.lower() and "source output file handles" in readme.lower() and "source urls require http(s) schemes and hosts" in readme.lower() and "output subfolders" in readme.lower(),
+    require("actions/checkout@v4" in workflow and "actions/setup-python@v5" in workflow and "make check" in workflow,
+            "GitHub Actions must run make check on a supported Python version",
+            failures)
+    require("make lint" in readme and "make test" in readme and "make build" in readme and "make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "lowercase" in readme.lower() and "response cleanup" in readme.lower() and "source metadata file handles" in readme.lower() and "source output file handles" in readme.lower() and "source urls require https" in readme.lower() and "GitHub Actions" in readme and "output subfolders" in readme.lower(),
             "README must document static verification, source metadata, and updater usage",
             failures)
-    require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "lowercase" in vision.lower() and "response cleanup" in vision.lower() and "source metadata file handles" in vision.lower() and "source output file handles" in vision.lower() and "source urls include hosts" in vision.lower() and "output subfolders" in vision.lower(),
+    require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "lowercase" in vision.lower() and "response cleanup" in vision.lower() and "source metadata file handles" in vision.lower() and "source output file handles" in vision.lower() and "source urls use https" in vision.lower() and "GitHub Actions" in vision and "output subfolders" in vision.lower(),
             "VISION must describe baseline validation and provenance guardrails",
             failures)
-    require("false positive" in security.lower() and "source metadata" in security.lower() and "response cleanup" in security.lower() and "source output file handles" in security.lower() and "source urls" in security.lower() and "output subfolders" in security.lower(),
+    require("false positive" in security.lower() and "source metadata" in security.lower() and "response cleanup" in security.lower() and "source output file handles" in security.lower() and "source urls" in security.lower() and "https" in security.lower() and "output subfolders" in security.lower(),
             "SECURITY must document false-positive and source metadata review expectations",
             failures)
-    require("timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "lowercase" in changes.lower() and "response" in changes.lower() and "source metadata file handles" in changes.lower() and "source output file handles" in changes.lower() and "source urls" in changes.lower() and "output subfolders" in changes.lower() and "make lint" in changes and "make test" in changes and "make build" in changes,
+    require("GitHub Actions" in changes and "https source" in changes.lower() and "timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "lowercase" in changes.lower() and "response" in changes.lower() and "source metadata file handles" in changes.lower() and "source output file handles" in changes.lower() and "source urls" in changes.lower() and "output subfolders" in changes.lower() and "make lint" in changes and "make test" in changes and "make build" in changes,
             "CHANGES must record updater timeout and generated hosts baseline updates",
             failures)
     require("__pycache__/" in gitignore and "*.py[cod]" in gitignore and ".env" in gitignore,
@@ -529,6 +540,12 @@ def main():
             failures)
     require("status: completed" in output_path_plan,
             "output subfolder validation plan must be marked completed",
+            failures)
+    require("status: completed" in source_url_https_plan,
+            "source URL HTTPS plan must be marked completed",
+            failures)
+    require("status: completed" in ci_plan,
+            "CI baseline plan must be marked completed",
             failures)
 
     if failures:

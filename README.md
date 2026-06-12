@@ -12,6 +12,7 @@ This README is based on the checked-in source, manifests, scripts, and repositor
 ## Repository Contents
 
 - `CHANGES.md` - concise history of maintenance changes
+- `.github/workflows/check.yml` - CI baseline that runs the static Make gate
 - `Makefile` - local verification entry point
 - `README.md` - project overview and local usage notes
 - `SECURITY.md` - security reporting and disclosure guidance
@@ -77,12 +78,14 @@ source of truth.
 
 The baseline runs `scripts/check-baseline.py`, validates `readmeData.json`, parses the README SVG, checks `updateFile.py` syntax without fetching remote lists, verifies generated hosts-line syntax and counts, and limits duplicates to known static localhost aliases.
 It also verifies updater source fetches keep HTTP(S)-only URL validation,
-source URL host validation, network timeouts, and response cleanup behavior.
+source URL host validation, HTTPS source URLs, network timeouts, and response cleanup behavior.
 Source metadata file handles are also checked so JSON reads close promptly while
 building source data. Source output file handles are checked so generated hosts
 files close even when source writes fail.
 Output subfolders are checked so updater writes cannot target paths outside the
 repository through absolute paths or parent traversal.
+GitHub Actions runs the same no-network `make check` gate through
+`.github/workflows/check.yml` on pushes and pull requests.
 
 When the required SDK or runtime is unavailable, use static checks and source review first, then verify on a machine that has the matching platform toolchain.
 
@@ -98,7 +101,7 @@ When the required SDK or runtime is unavailable, use static checks and source re
 - Review changes touching shell execution, subprocess, or dynamic evaluation; examples from the scan include updateFile.py.
 - Review changes touching infrastructure, proxy, cloud, or deployment configuration; examples from the scan include readmeData.json.
 - Treat false positives as security and reliability issues: an overbroad entry can block account recovery, updates, payments, or other important services.
-- Source URLs require HTTP(S) schemes and hosts before the updater fetches them.
+- Source URLs require HTTPS schemes and hosts before the updater fetches them.
 - Output subfolders must stay inside the repository before generated hosts data
   is written.
 - `updateFile.py --replace` and DNS flush behavior can affect the local machine's `/etc/hosts`; review generated output and keep backups before privileged replacement.
@@ -119,6 +122,9 @@ When the required SDK or runtime is unavailable, use static checks and source re
   source output file-handle cleanup guardrail.
 - See `docs/plans/2026-06-09-output-subfolder-validation.md` for the updater
   output subfolders guardrail.
+- See `docs/plans/2026-06-10-source-url-https.md` for the HTTPS source URL
+  baseline.
+- See `docs/plans/2026-06-10-ci-baseline.md` for the lightweight CI baseline.
 - See `docs/plans/2026-06-09-make-gate-aliases.md` for the local gate alias guardrail.
 - Run `make lint`, `make test`, `make build`, and `make check` before pushing changes to `hosts`, `readmeData.json`, updater code, or source metadata.
 

@@ -1,5 +1,11 @@
 # Changes
 
+## 2026-06-10
+
+- Replaced active `readmeData.json` source fetch URLs for someonewhocares.org
+  and MVPS with HTTPS source URLs.
+- Added GitHub Actions CI that runs the no-network `make check` baseline.
+
 ## 2026-06-09
 
 - Validated updater output subfolders so generated hosts writes stay inside the
