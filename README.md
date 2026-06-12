@@ -80,8 +80,9 @@ The baseline runs `scripts/check-baseline.py`, validates `readmeData.json`, pars
 It also verifies updater source fetches keep HTTPS-only URL validation,
 source URL host validation, network timeouts, and response cleanup behavior.
 Source metadata file handles are also checked so JSON reads close promptly while
-building source data. Source output file handles are checked so generated hosts
-files close even when source writes fail.
+building source data. Refreshed source files are written and synced beside the
+cached file, then atomically replaced so failures preserve the last known-good
+source and remove incomplete temporary files.
 Output subfolders are checked so updater writes cannot target paths outside the
 repository through absolute paths or parent traversal.
 GitHub Actions runs the same no-network `make check` gate through
@@ -106,6 +107,7 @@ When the required SDK or runtime is unavailable, use static checks and source re
 - Source URLs must not contain credentials, IP literals, whitespace, malformed
   ports, or invalid DNS labels; redirects must remain inside the same policy.
 - Source responses are limited to 32 MiB and retain the 30-second timeout.
+- Failed source refreshes preserve the last known-good cached source file.
 - Upstream entries are normalized only when their hostnames use valid DNS
   labels; underscores, empty labels, and leading or trailing hyphens are
   rejected, as are overlong labels or names.
@@ -129,6 +131,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
   transport guardrail.
 - See `docs/plans/2026-06-09-source-output-file-handle-cleanup.md` for the
   source output file-handle cleanup guardrail.
+- See `docs/plans/2026-06-12-atomic-source-refresh.md` for last-known-good
+  source preservation during refreshes.
 - See `docs/plans/2026-06-09-output-subfolder-validation.md` for the updater
   output subfolders guardrail.
 - See `docs/plans/2026-06-10-source-url-https.md` for the HTTPS source URL

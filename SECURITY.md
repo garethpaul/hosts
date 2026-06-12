@@ -42,9 +42,11 @@ Helpful reports include:
 - Source fetches reject credentials, IP literals, malformed authorities, and
   HTTPS redirects that leave the validated DNS-host boundary. Responses retain
   a 30-second timeout and a 32 MiB read limit.
+- Source refreshes preserve the last known-good cached file until a complete
+  replacement has been written and synced, and remove partial temporary files.
 - Output subfolders should stay inside the repository tree so generated hosts
   writes cannot escape through absolute paths or parent traversal.
-- `make check` runs the static baseline for hosts syntax, generated counts, duplicate scope, JSON metadata, and Python updater syntax without network access or local hosts replacement. It also checks HTTPS source URLs, host validation, timeouts, response cleanup, and source output file handles.
+- `make check` runs the static baseline for hosts syntax, generated counts, duplicate scope, JSON metadata, and Python updater syntax without network access or local hosts replacement. It also checks HTTPS source URLs, host validation, timeouts, response cleanup, and atomic source refreshes.
 - Hosted validation is read-only, uses immutable actions without persisted
   checkout credentials, and runs no network-fetch or privileged updater path.
 

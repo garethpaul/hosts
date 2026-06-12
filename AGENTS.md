@@ -51,6 +51,8 @@ source lists.
 - See `VISION.md` for project direction and contribution guardrails.
 - Keep source downloads credential-free, HTTPS-only across redirects, bounded
   to 32 MiB, and protected by the documented timeout.
+- Keep source refreshes atomic so failed writes preserve last-known-good data
+  and remove incomplete temporary files.
 - Never run updater replacement or DNS-flush options during automated testing;
   those paths can invoke privileged system commands.
 - Keep `check.yml` as the sole pinned, read-only workflow without persisted

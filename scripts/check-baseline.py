@@ -6,6 +6,7 @@ import io
 import json
 import re
 import sys
+import tempfile
 import warnings
 import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
@@ -25,6 +26,7 @@ CI_PLAN = ROOT / "docs/plans/2026-06-10-ci-baseline.md"
 SOURCE_HOSTNAME_PLAN = ROOT / "docs/plans/2026-06-10-source-hostname-validation.md"
 NETWORK_BOUNDARY_PLAN = ROOT / "docs/plans/2026-06-12-source-network-boundary.md"
 CI_POLICY_PLAN = ROOT / "docs/plans/2026-06-12-ci-policy-hardening.md"
+ATOMIC_REFRESH_PLAN = ROOT / "docs/plans/2026-06-12-atomic-source-refresh.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -349,7 +351,7 @@ def check_source_data_files_close_on_parse_failure(failures):
             failures)
 
 
-def check_source_output_files_close_on_write_failure(failures):
+def check_source_refresh_is_atomic(failures):
     namespace = {
         "__file__": str(ROOT / "updateFile.py"),
         "__name__": "hosts_updatefile_baseline",
@@ -361,52 +363,47 @@ def check_source_output_files_close_on_write_failure(failures):
         failures.append(f"updateFile.py helpers must load without side effects: {error}")
         return
 
-    class FakeSourceDataFile:
-        def __enter__(self):
-            return self
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        source_directory = Path(temporary_directory) / "source"
+        source_directory.mkdir()
+        metadata_path = source_directory / "update.json"
+        metadata_path.write_text(
+            '{"url": "https://example.test/hosts"}', encoding="utf-8")
+        destination = source_directory / "hosts"
+        destination.write_text("last-known-good\n", encoding="utf-8")
 
-        def __exit__(self, exc_type, exc_value, traceback):
-            return False
+        namespace["BASEDIR_PATH"] = temporary_directory
+        namespace["recursive_glob"] = lambda root, filename: [str(metadata_path)]
+        namespace["get_file_by_url"] = lambda url: "0.0.0.0 example.test\n"
 
-        def read(self):
-            return '{"url": "https://example.test/hosts"}'
+        with contextlib.redirect_stdout(io.StringIO()):
+            namespace["update_all_sources"]("update.json", "hosts")
 
-    class FakeHostsFile:
-        def __init__(self):
-            self.closed = False
+        require(destination.read_text(encoding="utf-8") ==
+                "0.0.0.0 example.test\n",
+                "successful source refreshes must replace the cached hosts file",
+                failures)
+        require(not list(source_directory.glob(".hosts-refresh-*")),
+                "successful source refreshes must not leave temporary files",
+                failures)
 
-        def __enter__(self):
-            return self
+        destination.write_text("last-known-good\n", encoding="utf-8")
+        original_write_data = namespace["write_data"]
 
-        def __exit__(self, exc_type, exc_value, traceback):
-            self.closed = True
-            return False
+        def fail_after_partial_write(output_file, data):
+            original_write_data(output_file, "partial\n")
+            raise IOError("simulated write failure")
 
-    opened_outputs = []
+        namespace["write_data"] = fail_after_partial_write
+        with contextlib.redirect_stdout(io.StringIO()):
+            namespace["update_all_sources"]("update.json", "hosts")
 
-    def fake_open(path, mode="r"):
-        if path == "source/update.json" and mode == "r":
-            return FakeSourceDataFile()
-        if str(path).endswith("source/hosts") and mode == "wb":
-            hosts_file = FakeHostsFile()
-            opened_outputs.append(hosts_file)
-            return hosts_file
-        raise AssertionError("unexpected open call: {0} {1}".format(path, mode))
-
-    def fake_write_data(hosts_file, updated_file):
-        raise IOError("simulated write failure")
-
-    namespace["recursive_glob"] = lambda root, filename: ["source/update.json"]
-    namespace["open"] = fake_open
-    namespace["get_file_by_url"] = lambda url: "0.0.0.0 example.test\n"
-    namespace["write_data"] = fake_write_data
-
-    with contextlib.redirect_stdout(io.StringIO()):
-        namespace["update_all_sources"]("update.json", "hosts")
-
-    require(opened_outputs and opened_outputs[0].closed,
-            "update_all_sources must close generated source hosts files when writes fail",
-            failures)
+        require(destination.read_text(encoding="utf-8") == "last-known-good\n",
+                "failed source refreshes must preserve the last known-good file",
+                failures)
+        require(not list(source_directory.glob(".hosts-refresh-*")),
+                "failed source refreshes must remove incomplete temporary files",
+                failures)
 
 
 def check_hosts_file(failures):
@@ -533,6 +530,7 @@ def main():
         "docs/plans/2026-06-10-source-hostname-validation.md",
         "docs/plans/2026-06-12-source-network-boundary.md",
         "docs/plans/2026-06-12-ci-policy-hardening.md",
+        "docs/plans/2026-06-12-atomic-source-refresh.md",
     ]
 
     for relative_path in required_files:
@@ -548,7 +546,7 @@ def main():
     check_source_fetch_requires_https_host(failures)
     check_source_redirect_and_size_boundaries(failures)
     check_source_data_files_close_on_parse_failure(failures)
-    check_source_output_files_close_on_write_failure(failures)
+    check_source_refresh_is_atomic(failures)
     check_hosts_file(failures)
     check_readme_data(failures)
 
@@ -565,8 +563,10 @@ def main():
             'with open(update_file_path, "r") as update_file:' in updater,
             "updateFile.py must close source metadata files after JSON reads",
             failures)
-    require('"wb") as hosts_file:' in updater,
-            "updateFile.py must close generated source hosts files after writes",
+    require("write_source_file_atomically(destination, updated_file)" in updater and
+            "os.replace(temporary_path, destination)" in updater and
+            "os.fsync(temporary_file.fileno())" in updater,
+            "updateFile.py must atomically replace refreshed source hosts files",
             failures)
     require("re.escape(" in updater,
             "updateFile.py must escape custom exclusion domains before compiling regexes",
@@ -609,6 +609,7 @@ def main():
     source_hostname_plan = SOURCE_HOSTNAME_PLAN.read_text(encoding="utf-8") if SOURCE_HOSTNAME_PLAN.exists() else ""
     network_boundary_plan = NETWORK_BOUNDARY_PLAN.read_text(encoding="utf-8") if NETWORK_BOUNDARY_PLAN.exists() else ""
     ci_policy_plan = CI_POLICY_PLAN.read_text(encoding="utf-8") if CI_POLICY_PLAN.exists() else ""
+    atomic_refresh_plan = ATOMIC_REFRESH_PLAN.read_text(encoding="utf-8") if ATOMIC_REFRESH_PLAN.exists() else ""
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
             failures)
@@ -655,13 +656,13 @@ jobs:
             "GitHub Actions must match the canonical credential-free Python matrix", failures)
     require(read(".github/CODEOWNERS") == "* @garethpaul\n",
             "CODEOWNERS must assign repository-wide ownership", failures)
-    require("make lint" in readme and "make test" in readme and "make build" in readme and "make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "lowercase" in readme.lower() and "response cleanup" in readme.lower() and "source metadata file handles" in readme.lower() and "source output file handles" in readme.lower() and "source urls require https schemes and hosts" in readme.lower() and "GitHub Actions" in readme and "output subfolders" in readme.lower(),
+    require("make lint" in readme and "make test" in readme and "make build" in readme and "make check" in readme and "readmeData.json" in readme and "updateFile.py" in readme and "exclusion" in readme.lower() and "plain domains" in readme.lower() and "lowercase" in readme.lower() and "response cleanup" in readme.lower() and "source metadata file handles" in readme.lower() and "atomically replaced" in readme.lower() and "last known-good" in readme.lower() and "source urls require https schemes and hosts" in readme.lower() and "GitHub Actions" in readme and "output subfolders" in readme.lower(),
             "README must document static verification, source metadata, and updater usage",
             failures)
-    require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "lowercase" in vision.lower() and "response cleanup" in vision.lower() and "source metadata file handles" in vision.lower() and "source output file handles" in vision.lower() and "source urls use https" in vision.lower() and "include hosts" in vision.lower() and "GitHub Actions" in vision and "output subfolders" in vision.lower(),
+    require("scripts/check-baseline.py" in vision and "make lint" in vision and "make test" in vision and "make build" in vision and "provenance" in vision.lower() and "plain domains" in vision.lower() and "lowercase" in vision.lower() and "response cleanup" in vision.lower() and "source metadata file handles" in vision.lower() and "last known-good" in vision.lower() and "atomic replacement" in vision.lower() and "source urls use https" in vision.lower() and "include hosts" in vision.lower() and "GitHub Actions" in vision and "output subfolders" in vision.lower(),
             "VISION must describe baseline validation and provenance guardrails",
             failures)
-    require("false positive" in security.lower() and "source metadata" in security.lower() and "response cleanup" in security.lower() and "source output file handles" in security.lower() and "source urls must use https" in security.lower() and "output subfolders" in security.lower(),
+    require("false positive" in security.lower() and "source metadata" in security.lower() and "response cleanup" in security.lower() and "last known-good" in security.lower() and "atomic source refreshes" in security.lower() and "source urls must use https" in security.lower() and "output subfolders" in security.lower(),
             "SECURITY must document false-positive and source metadata review expectations",
             failures)
     require("GitHub Actions" in changes and "https source" in changes.lower() and "timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "lowercase" in changes.lower() and "response" in changes.lower() and "source metadata file handles" in changes.lower() and "source output file handles" in changes.lower() and "source urls" in changes.lower() and "output subfolders" in changes.lower() and "make lint" in changes and "make test" in changes and "make build" in changes,
@@ -714,6 +715,9 @@ jobs:
             failures)
     require("status: completed" in ci_policy_plan and "hostile workflow mutations" in ci_policy_plan.lower(),
             "CI policy plan must record completed mutation verification",
+            failures)
+    require("status: completed" in atomic_refresh_plan and "temporary-file" in atomic_refresh_plan.lower(),
+            "atomic source refresh plan must record completed mutation verification",
             failures)
 
     if failures:

@@ -66,7 +66,8 @@ file. The updater guardrails also cover HTTPS-only source fetches, fetch
 timeouts, response cleanup, source URLs use HTTPS and include hosts, and source metadata file handles.
 Source authorities reject credentials, IP literals, malformed ports, and
 invalid DNS labels before network access; redirects remain inside that policy.
-Source output file handles close on write failures during source refreshes.
+Source refreshes sync a same-directory temporary file before atomic replacement,
+preserving the last known-good source and cleaning up partial writes on failure.
 Output subfolders are constrained to relative paths within the repository.
 Custom exclusions are normalized to lowercase before matching generated hosts.
 

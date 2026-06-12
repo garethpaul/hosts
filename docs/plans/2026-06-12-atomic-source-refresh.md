@@ -1,6 +1,6 @@
 # Atomic Source Refresh
 
-status: planned
+status: completed
 
 ## Context
 
@@ -10,7 +10,7 @@ the previous source data has already been truncated and the updater continues
 after logging the failure. A transient refresh failure can therefore discard
 the last known-good input used to generate the combined hosts file.
 
-## Scope
+## Completed Scope
 
 - Write refreshed source data to a temporary file in the destination directory.
 - Flush and sync the completed temporary file before atomically replacing the
