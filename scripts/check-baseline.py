@@ -28,6 +28,7 @@ NETWORK_BOUNDARY_PLAN = ROOT / "docs/plans/2026-06-12-source-network-boundary.md
 CI_POLICY_PLAN = ROOT / "docs/plans/2026-06-12-ci-policy-hardening.md"
 ATOMIC_REFRESH_PLAN = ROOT / "docs/plans/2026-06-12-atomic-source-refresh.md"
 TARGET_IP_PLAN = ROOT / "docs/plans/2026-06-13-target-ip-validation.md"
+OUTPUT_SYMLINK_PLAN = ROOT / "docs/plans/2026-06-13-output-symlink-containment.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -135,6 +136,23 @@ def check_output_subfolder_validation(failures):
 
     for output_path in ["../outside", "generated/../outside", "/tmp/hosts", r"C:\hosts", r"\windows\hosts", r"\\server\share"]:
         require(not validator(output_path), f"--output should reject unsafe subfolder {output_path}", failures)
+
+    with tempfile.TemporaryDirectory() as temporary_root:
+        repository = Path(temporary_root) / "repository"
+        inside = repository / "generated"
+        outside = Path(temporary_root) / "repository-outside"
+        inside.mkdir(parents=True)
+        outside.mkdir()
+        (repository / "inside-link").symlink_to(inside, target_is_directory=True)
+        (repository / "escape-link").symlink_to(outside, target_is_directory=True)
+        namespace["BASEDIR_PATH"] = str(repository)
+
+        require(validator("inside-link"),
+                "--output should accept symlinks that resolve inside the repository",
+                failures)
+        require(not validator("escape-link"),
+                "--output must reject symlinks that resolve outside the repository",
+                failures)
 
 
 def check_source_hostname_validation(failures):
@@ -566,6 +584,7 @@ def main():
         "docs/plans/2026-06-12-ci-policy-hardening.md",
         "docs/plans/2026-06-12-atomic-source-refresh.md",
         "docs/plans/2026-06-13-target-ip-validation.md",
+        "docs/plans/2026-06-13-output-symlink-containment.md",
     ]
 
     for relative_path in required_files:
@@ -613,7 +632,10 @@ def main():
     require("domain_format_regex" in updater and "example.com" in updater,
             "updateFile.py must validate custom exclusions as plain domains",
             failures)
-    require("is_safe_output_subfolder" in updater and "parser.error(\"--output must be a relative subfolder without parent traversal\")" in updater,
+    require("is_safe_output_subfolder" in updater and
+            "os.path.realpath(BASEDIR_PATH)" in updater and
+            "output_path.startswith(repository_path + os.sep)" in updater and
+            "parser.error(\"--output must resolve to a relative subfolder inside the repository\")" in updater,
             "updateFile.py must reject unsafe output subfolders before writing generated hosts files",
             failures)
     require("is_valid_source_hostname(hostname)" in updater and "hostname_format_regex" in updater,
@@ -654,6 +676,7 @@ def main():
     ci_policy_plan = CI_POLICY_PLAN.read_text(encoding="utf-8") if CI_POLICY_PLAN.exists() else ""
     atomic_refresh_plan = ATOMIC_REFRESH_PLAN.read_text(encoding="utf-8") if ATOMIC_REFRESH_PLAN.exists() else ""
     target_ip_plan = TARGET_IP_PLAN.read_text(encoding="utf-8") if TARGET_IP_PLAN.exists() else ""
+    output_symlink_plan = OUTPUT_SYMLINK_PLAN.read_text(encoding="utf-8") if OUTPUT_SYMLINK_PLAN.exists() else ""
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
             failures)
@@ -766,6 +789,12 @@ jobs:
             "strict IPv4 or IPv6 literal" in changes and "line injection" in changes,
             "Docs must record strict target-IP validation",
             failures)
+    require("symlinks must resolve inside the repository tree" in readme and
+            "external symbolic links" in security and
+            "including symlink resolution" in vision and
+            "symbolic links resolve outside" in changes,
+            "Docs must record symlink-aware output containment",
+            failures)
     atomic_refresh_statuses = re.findall(
         r"^status: .+$", atomic_refresh_plan, flags=re.MULTILINE
     )
@@ -804,6 +833,32 @@ jobs:
             and all(item in target_ip_verification for item in target_ip_required_evidence)
             and re.search(r"\b(?:pending|todo|tbd|not run)\b", target_ip_verification, re.IGNORECASE) is None,
             "target IP validation plan must record completed status and actual verification",
+            failures)
+    output_symlink_statuses = re.findall(
+        r"^status: .+$", output_symlink_plan, flags=re.MULTILINE
+    )
+    output_symlink_sections = output_symlink_plan.split(
+        "## Verification Completed\n", 1
+    )
+    output_symlink_verification = (
+        output_symlink_sections[1]
+        if len(output_symlink_sections) == 2 else ""
+    )
+    output_symlink_required_evidence = (
+        "All four Make gates",
+        "python3 -m py_compile updateFile.py scripts/check-baseline.py",
+        "PYTHONDONTWRITEBYTECODE=1 python3 updateFile.py --help",
+        "git diff --check",
+        "Five isolated hostile mutations",
+        "Hosted Python matrix and CodeQL evidence",
+    )
+    require(output_symlink_statuses == ["status: completed"]
+            and all(item in output_symlink_verification
+                    for item in output_symlink_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b",
+                          output_symlink_verification,
+                          re.IGNORECASE) is None,
+            "output symlink containment plan must record completed status and actual local verification",
             failures)
 
     if failures:

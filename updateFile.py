@@ -125,7 +125,7 @@ def main():
     options = vars(parser.parse_args())
 
     if not is_safe_output_subfolder(options["outputsubfolder"]):
-        parser.error("--output must be a relative subfolder without parent traversal")
+        parser.error("--output must resolve to a relative subfolder inside the repository")
     if not is_valid_target_ip(options["targetip"]):
         parser.error("--ip must be a valid IPv4 or IPv6 literal")
 
@@ -1260,7 +1260,14 @@ def is_safe_output_subfolder(output_subfolder):
             re.match(r"^[A-Za-z]:", output_subfolder)):
         return False
 
-    return ".." not in re.split(r"[\\/]+", output_subfolder)
+    if ".." in re.split(r"[\\/]+", output_subfolder):
+        return False
+
+    repository_path = os.path.realpath(BASEDIR_PATH)
+    output_path = os.path.realpath(path_join_robust(
+        repository_path, output_subfolder))
+    return (output_path == repository_path or
+            output_path.startswith(repository_path + os.sep))
 
 
 def recursive_glob(stem, file_pattern):

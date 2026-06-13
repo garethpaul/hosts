@@ -44,8 +44,9 @@ Helpful reports include:
   a 30-second timeout and a 32 MiB read limit.
 - Source refreshes preserve the last known-good cached file until a complete
   replacement has been written and synced, and remove partial temporary files.
-- Output subfolders should stay inside the repository tree so generated hosts
-  writes cannot escape through absolute paths or parent traversal.
+- Output subfolders and resolved symlink targets should stay inside the
+  repository tree so generated hosts writes cannot escape through absolute
+  paths, parent traversal, or external symbolic links.
 - The generated-rule `--ip` target must be a strict IPv4 or IPv6 literal;
   whitespace, hostnames, malformed addresses, and line injection are rejected
   before source refresh or file generation.

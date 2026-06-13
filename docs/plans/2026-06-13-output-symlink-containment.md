@@ -1,6 +1,6 @@
 # Contain Symlinked Output Paths
 
-status: planned
+status: completed
 
 ## Context
 
@@ -45,8 +45,25 @@ boundary.
 
 ## Work Completed
 
-Pending implementation.
+- Resolved the repository root and requested output path before accepting a
+  relative subfolder.
+- Required the resolved path to equal the repository root or remain beneath a
+  component-boundary root prefix.
+- Added isolated fixtures proving internal symlinks remain valid while a
+  sibling-prefix external symlink is rejected.
+- Updated usage, security, vision, and change documentation.
 
 ## Verification Completed
 
-Pending implementation and verification.
+- All four Make gates passed the dependency-free offline baseline.
+- `python3 -m py_compile updateFile.py scripts/check-baseline.py`,
+  `PYTHONDONTWRITEBYTECODE=1 python3 updateFile.py --help`, and
+  `git diff --check` passed.
+- Five isolated hostile mutations were rejected: missing candidate realpath,
+  naive sibling-prefix acceptance, internal-path rejection, stale plan status,
+  and missing verification evidence.
+- No source download, generated repository output, local hosts replacement, or
+  DNS-cache flush path was executed.
+- Generated-artifact and intended-file secret-pattern scans passed.
+- Hosted Python matrix and CodeQL evidence is recorded separately after push;
+  this plan claims only the completed local offline verification.
