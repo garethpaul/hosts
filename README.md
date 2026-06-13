@@ -111,6 +111,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
   ports, or invalid DNS labels; redirects must remain inside the same policy.
 - Source responses are limited to 32 MiB and retain the 30-second timeout.
 - Failed source refreshes preserve the last known-good cached source file.
+- `readmeData.json` updates are atomically replaced so failed serialization or
+  writes preserve the last-known-good generated provenance metadata.
 - Upstream entries are normalized only when their hostnames use valid DNS
   labels; underscores, empty labels, and leading or trailing hyphens are
   rejected, as are overlong labels or names.

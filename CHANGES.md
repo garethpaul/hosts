@@ -23,6 +23,8 @@
   checkout credentials, enforced its full shape, and added CODEOWNERS.
 - Made source refreshes atomic so failed writes preserve the last known-good
   cached hosts data and remove incomplete temporary files.
+- Made `readmeData.json` writes atomic so failed serialization or filesystem
+  writes preserve the last-known-good provenance metadata.
 ## 2026-06-09
 
 - Validated updater output subfolders so generated hosts writes stay inside the

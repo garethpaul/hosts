@@ -44,6 +44,8 @@ Helpful reports include:
   a 30-second timeout and a 32 MiB read limit.
 - Source refreshes preserve the last known-good cached file until a complete
   replacement has been written and synced, and remove partial temporary files.
+- Generated provenance uses atomic metadata replacement so an interrupted
+  `readmeData.json` write cannot truncate the last-known-good metadata.
 - Output subfolders and resolved symlink targets should stay inside the
   repository tree so generated hosts writes cannot escape through absolute
   paths, parent traversal, or external symbolic links.
