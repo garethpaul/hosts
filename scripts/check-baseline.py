@@ -27,6 +27,7 @@ SOURCE_HOSTNAME_PLAN = ROOT / "docs/plans/2026-06-10-source-hostname-validation.
 NETWORK_BOUNDARY_PLAN = ROOT / "docs/plans/2026-06-12-source-network-boundary.md"
 CI_POLICY_PLAN = ROOT / "docs/plans/2026-06-12-ci-policy-hardening.md"
 ATOMIC_REFRESH_PLAN = ROOT / "docs/plans/2026-06-12-atomic-source-refresh.md"
+TARGET_IP_PLAN = ROOT / "docs/plans/2026-06-13-target-ip-validation.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -208,6 +209,39 @@ def check_source_fetch_closes_response(failures):
             failures)
     require(response.closed,
             "get_file_by_url must close response objects after reading",
+            failures)
+
+
+def check_target_ip_validation(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    is_valid_target_ip = namespace["is_valid_target_ip"]
+    for valid_ip in ["0.0.0.0", "127.0.0.1", "255.255.255.255", "::", "::1", "2001:db8::1"]:
+        require(is_valid_target_ip(valid_ip),
+                f"target IP validation must accept {valid_ip}",
+                failures)
+    for invalid_ip in [
+            "", "example.test", "256.0.0.1", "127.0.0.1 ",
+            " 127.0.0.1", "127.0.0.1 extra", "127.0.0.1\n1.2.3.4",
+            "2001:db8::1 extra", "2001:db8:::1", None]:
+        require(not is_valid_target_ip(invalid_ip),
+                f"target IP validation must reject {invalid_ip!r}",
+                failures)
+
+    validation_call = 'if not is_valid_target_ip(options["targetip"]):'
+    require(validation_call in source and
+            source.index(validation_call) < source.index("settings = get_defaults()") and
+            source.index(validation_call) < source.index('settings["sources"] = list_dir_no_hidden'),
+            "target IP validation must run before settings, source discovery, or side effects",
             failures)
 
 
@@ -531,6 +565,7 @@ def main():
         "docs/plans/2026-06-12-source-network-boundary.md",
         "docs/plans/2026-06-12-ci-policy-hardening.md",
         "docs/plans/2026-06-12-atomic-source-refresh.md",
+        "docs/plans/2026-06-13-target-ip-validation.md",
     ]
 
     for relative_path in required_files:
@@ -542,6 +577,7 @@ def main():
     check_exclusion_domain_validation(failures)
     check_output_subfolder_validation(failures)
     check_source_hostname_validation(failures)
+    check_target_ip_validation(failures)
     check_source_fetch_closes_response(failures)
     check_source_fetch_requires_https_host(failures)
     check_source_redirect_and_size_boundaries(failures)
@@ -583,6 +619,13 @@ def main():
     require("is_valid_source_hostname(hostname)" in updater and "hostname_format_regex" in updater,
             "updateFile.py must reject malformed upstream hostnames before output",
             failures)
+    require("def is_valid_target_ip" in updater and
+            'parser.error("--ip must be a valid IPv4 or IPv6 literal")' in updater and
+            "socket.inet_pton" in updater and "socket.AF_INET, socket.AF_INET6" in updater and
+            "target_ip != target_ip.strip()" in updater and
+            "any(character.isspace() for character in target_ip)" in updater,
+            "updateFile.py must reject invalid target IP values before output",
+            failures)
     require("shell=True" not in updater,
             "updateFile.py must not use shell=True for privileged commands",
             failures)
@@ -610,6 +653,7 @@ def main():
     network_boundary_plan = NETWORK_BOUNDARY_PLAN.read_text(encoding="utf-8") if NETWORK_BOUNDARY_PLAN.exists() else ""
     ci_policy_plan = CI_POLICY_PLAN.read_text(encoding="utf-8") if CI_POLICY_PLAN.exists() else ""
     atomic_refresh_plan = ATOMIC_REFRESH_PLAN.read_text(encoding="utf-8") if ATOMIC_REFRESH_PLAN.exists() else ""
+    target_ip_plan = TARGET_IP_PLAN.read_text(encoding="utf-8") if TARGET_IP_PLAN.exists() else ""
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
             failures)
@@ -716,6 +760,12 @@ jobs:
     require("status: completed" in ci_policy_plan and "hostile workflow mutations" in ci_policy_plan.lower(),
             "CI policy plan must record completed mutation verification",
             failures)
+    require("valid IPv4 or IPv6 literal" in readme and "injected lines" in readme and
+            "strict IPv4 or IPv6 literal" in security and "line injection" in security and
+            "strict IPv4 or IPv6 literal" in vision and
+            "strict IPv4 or IPv6 literal" in changes and "line injection" in changes,
+            "Docs must record strict target-IP validation",
+            failures)
     atomic_refresh_statuses = re.findall(
         r"^status: .+$", atomic_refresh_plan, flags=re.MULTILINE
     )
@@ -735,6 +785,25 @@ jobs:
             and all(item in atomic_refresh_verification for item in atomic_refresh_required_evidence)
             and re.search(r"\b(?:pending|todo|tbd|not run)\b", atomic_refresh_verification, re.IGNORECASE) is None,
             "atomic source refresh plan must record completed status and actual verification",
+            failures)
+    target_ip_statuses = re.findall(
+        r"^status: .+$", target_ip_plan, flags=re.MULTILINE
+    )
+    target_ip_sections = target_ip_plan.split("## Verification Completed\n", 1)
+    target_ip_verification = (
+        target_ip_sections[1] if len(target_ip_sections) == 2 else ""
+    )
+    target_ip_required_evidence = (
+        "All four Make gates",
+        "python3 -m py_compile updateFile.py scripts/check-baseline.py",
+        "PYTHONDONTWRITEBYTECODE=1 python3 updateFile.py --help",
+        "git diff --check",
+        "Seven isolated hostile mutations",
+    )
+    require(target_ip_statuses == ["status: completed"]
+            and all(item in target_ip_verification for item in target_ip_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b", target_ip_verification, re.IGNORECASE) is None,
+            "target IP validation plan must record completed status and actual verification",
             failures)
 
     if failures:

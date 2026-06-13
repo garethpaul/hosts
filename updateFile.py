@@ -21,6 +21,11 @@ import json
 # Detecting Python 3 for version-dependent implementations
 PY3 = sys.version_info >= (3, 0)
 
+try:
+    STRING_TYPES = (basestring,)
+except NameError:
+    STRING_TYPES = (str,)
+
 if PY3:
     from urllib.request import build_opener, HTTPRedirectHandler
     from urllib.parse import urlparse
@@ -121,6 +126,8 @@ def main():
 
     if not is_safe_output_subfolder(options["outputsubfolder"]):
         parser.error("--output must be a relative subfolder without parent traversal")
+    if not is_valid_target_ip(options["targetip"]):
+        parser.error("--ip must be a valid IPv4 or IPv6 literal")
 
     options["outputpath"] = path_join_robust(BASEDIR_PATH,
                                              options["outputsubfolder"])
@@ -732,6 +739,23 @@ def is_valid_source_hostname(hostname):
         r"^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+"
         r"[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?$")
     return bool(hostname_format_regex.match(hostname))
+
+
+def is_valid_target_ip(target_ip):
+    """Return whether a target hosts address is a strict IP literal."""
+
+    if (not isinstance(target_ip, STRING_TYPES) or not target_ip or
+            target_ip != target_ip.strip() or
+            any(character.isspace() for character in target_ip)):
+        return False
+
+    for address_family in (socket.AF_INET, socket.AF_INET6):
+        try:
+            socket.inet_pton(address_family, target_ip)
+            return True
+        except (AttributeError, OSError, socket.error):
+            pass
+    return False
 
 
 def is_valid_source_url(url):

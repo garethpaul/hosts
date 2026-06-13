@@ -85,6 +85,9 @@ cached file, then atomically replaced so failures preserve the last known-good
 source and remove incomplete temporary files.
 Output subfolders are checked so updater writes cannot target paths outside the
 repository through absolute paths or parent traversal.
+The `--ip` target must be a valid IPv4 or IPv6 literal and is rejected before
+source discovery or output generation if it contains whitespace, a hostname,
+an out-of-range address, or injected lines.
 GitHub Actions runs the same no-network `make check` gate through
 `.github/workflows/check.yml` on pushes and pull requests using Python 3.10,
 3.12, and 3.14 with read-only permissions and no persisted checkout credential.
