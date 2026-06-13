@@ -1,6 +1,6 @@
 # Target IP Validation
 
-status: planned
+status: completed
 
 ## Context
 
@@ -68,3 +68,22 @@ effect or generated-data mutation.
 - `git diff --check`
 - Hostile mutations removing IPv4, IPv6, whitespace, parser-order, plan status,
   or verification evidence must be rejected.
+
+## Work Completed
+
+- Added strict IPv4/IPv6 literal validation using `socket.inet_pton`.
+- Rejected empty, hostname, malformed, whitespace, out-of-range, and injected
+  target values before settings, source discovery, or output work.
+- Added dependency-free offline accepted/rejected fixtures and source-order
+  enforcement.
+- Updated README, security, vision, and change documentation.
+
+## Verification Completed
+
+- All four Make gates passed locally.
+- `python3 -m py_compile updateFile.py scripts/check-baseline.py`,
+  `PYTHONDONTWRITEBYTECODE=1 python3 updateFile.py --help`, and
+  `git diff --check` passed.
+- Seven isolated hostile mutations were rejected: IPv4 and IPv6 family removal,
+  whitespace weakening, validation moved after settings, parser rejection
+  removal, stale plan status, and missing verification evidence.

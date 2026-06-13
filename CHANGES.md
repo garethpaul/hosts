@@ -1,5 +1,11 @@
 # Changes
 
+## 2026-06-13
+
+- Validated `--ip` as a strict IPv4 or IPv6 literal before source discovery or
+  output generation, rejecting hostnames, malformed addresses, whitespace, and
+  line injection.
+
 ## 2026-06-10
 
 - Rejected malformed upstream hostnames before they can become generated block
