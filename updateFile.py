@@ -919,8 +919,7 @@ def update_readme_data(readme_file, **readme_updates):
         readme_data = json.load(f)
         readme_data[extensions_key] = generation_data
 
-    with open(readme_file, "w") as f:
-        json.dump(readme_data, f)
+    write_json_file_atomically(readme_file, readme_data)
 
 
 def move_hosts_file_into_place(final_file):
@@ -1057,6 +1056,35 @@ def remove_old_hosts_file(backup):
 
 
 # Helper Functions
+def write_json_file_atomically(destination, data):
+    """Replace a JSON file only after its serialized data is durable."""
+
+    destination_directory = os.path.dirname(destination) or "."
+    destination_mode = 0o644
+    if os.path.exists(destination):
+        destination_mode = os.stat(destination).st_mode & 0o777
+
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+                mode="w", dir=destination_directory,
+                prefix=".readme-data-", delete=False) as temporary_file:
+            temporary_path = temporary_file.name
+            json.dump(data, temporary_file)
+            temporary_file.flush()
+            os.chmod(temporary_path, destination_mode)
+            os.fsync(temporary_file.fileno())
+
+        os.replace(temporary_path, destination)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            try:
+                os.remove(temporary_path)
+            except OSError:
+                pass
+
+
 def write_source_file_atomically(destination, data):
     """Replace a cached source file only after its new data is durable."""
 

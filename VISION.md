@@ -70,6 +70,8 @@ Source authorities reject credentials, IP literals, malformed ports, and
 invalid DNS labels before network access; redirects remain inside that policy.
 Source refreshes sync a same-directory temporary file before atomic replacement,
 preserving the last known-good source and cleaning up partial writes on failure.
+Generated provenance updates replace `readmeData.json` atomically after the
+complete JSON payload has been flushed and synced.
 Output subfolders are constrained to relative paths whose symlinks resolve
 within the repository.
 Custom exclusions are normalized to lowercase before matching generated hosts.

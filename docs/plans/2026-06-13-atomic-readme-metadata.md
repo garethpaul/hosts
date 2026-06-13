@@ -1,6 +1,6 @@
 # Atomic README Metadata Update
 
-status: planned
+status: completed
 
 ## Context
 
@@ -41,3 +41,26 @@ refreshes already preserve their last known-good files atomically.
 - Hostile mutations must reject direct destination writes, replacement before
   sync, missing failed-write preservation, stale plan status, and missing
   verification evidence.
+
+## Work Completed
+
+- Serialized generated provenance into a same-directory temporary file and
+  flushed and synced it before atomic replacement.
+- Preserved destination permissions and removed incomplete temporary files on
+  every failed write.
+- Added isolated success and partial-serialization fixtures that preserve
+  unrelated metadata variants and the last-known-good JSON.
+- Documented the atomic generated-metadata guarantee in repository guidance.
+
+## Verification Completed
+
+- All four Make gates passed the dependency-free offline baseline.
+- `python3 -m py_compile updateFile.py scripts/check-baseline.py`,
+  `PYTHONDONTWRITEBYTECODE=1 python3 updateFile.py --help`, and
+  `git diff --check` passed.
+- Five isolated hostile mutations were rejected: direct destination writes,
+  removal of the metadata sync, missing failed-write cleanup, stale plan
+  status, and missing verification evidence.
+- No source download, generated repository output, local hosts replacement, or
+  DNS-cache flush path was executed.
+- Generated-artifact and intended-file secret-pattern scans passed.

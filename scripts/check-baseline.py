@@ -29,6 +29,7 @@ CI_POLICY_PLAN = ROOT / "docs/plans/2026-06-12-ci-policy-hardening.md"
 ATOMIC_REFRESH_PLAN = ROOT / "docs/plans/2026-06-12-atomic-source-refresh.md"
 TARGET_IP_PLAN = ROOT / "docs/plans/2026-06-13-target-ip-validation.md"
 OUTPUT_SYMLINK_PLAN = ROOT / "docs/plans/2026-06-13-output-symlink-containment.md"
+ATOMIC_README_DATA_PLAN = ROOT / "docs/plans/2026-06-13-atomic-readme-metadata.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -458,6 +459,91 @@ def check_source_refresh_is_atomic(failures):
                 failures)
 
 
+def check_readme_data_update_is_atomic(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        directory = Path(temporary_directory)
+        metadata_path = directory / "readmeData.json"
+        metadata_path.write_text(
+            '{"base": {"entries": 1}, "legacy": {"entries": 2}}',
+            encoding="utf-8")
+        updates = {
+            "extensions": [],
+            "numberofrules": 3,
+            "outputsubfolder": "",
+            "sourcesdata": [{"name": "example"}],
+        }
+
+        write_events = []
+        original_fsync = namespace["os"].fsync
+        original_replace = namespace["os"].replace
+
+        def record_fsync(file_descriptor):
+            write_events.append("fsync")
+            return original_fsync(file_descriptor)
+
+        def record_replace(source, destination):
+            write_events.append("replace")
+            return original_replace(source, destination)
+
+        namespace["os"].fsync = record_fsync
+        namespace["os"].replace = record_replace
+        try:
+            namespace["update_readme_data"](str(metadata_path), **updates)
+        finally:
+            namespace["os"].fsync = original_fsync
+            namespace["os"].replace = original_replace
+
+        require(write_events == ["fsync", "replace"],
+                "metadata updates must sync before atomic replacement",
+                failures)
+        updated_data = json.loads(metadata_path.read_text(encoding="utf-8"))
+        require(updated_data["legacy"] == {"entries": 2},
+                "metadata updates must preserve unrelated variant records",
+                failures)
+        require(updated_data["base"]["entries"] == 3,
+                "metadata updates must atomically replace the selected variant",
+                failures)
+        require(not list(directory.glob(".readme-data-*")),
+                "successful metadata updates must not leave temporary files",
+                failures)
+
+        last_known_good = metadata_path.read_text(encoding="utf-8")
+        original_json_dump = namespace["json"].dump
+
+        def fail_after_partial_serialization(data, output_file):
+            output_file.write('{"partial":')
+            raise IOError("simulated serialization failure")
+
+        namespace["json"].dump = fail_after_partial_serialization
+        try:
+            try:
+                namespace["update_readme_data"](str(metadata_path), **updates)
+            except IOError:
+                pass
+            else:
+                failures.append("metadata serialization failures must propagate")
+        finally:
+            namespace["json"].dump = original_json_dump
+
+        require(metadata_path.read_text(encoding="utf-8") == last_known_good,
+                "failed metadata updates must preserve the last-known-good JSON",
+                failures)
+        require(not list(directory.glob(".readme-data-*")),
+                "failed metadata updates must remove incomplete temporary files",
+                failures)
+
+
 def check_hosts_file(failures):
     hosts_text = read("hosts")
     header_match = HEADER_COUNT_RE.search(hosts_text)
@@ -585,6 +671,7 @@ def main():
         "docs/plans/2026-06-12-atomic-source-refresh.md",
         "docs/plans/2026-06-13-target-ip-validation.md",
         "docs/plans/2026-06-13-output-symlink-containment.md",
+        "docs/plans/2026-06-13-atomic-readme-metadata.md",
     ]
 
     for relative_path in required_files:
@@ -602,6 +689,7 @@ def main():
     check_source_redirect_and_size_boundaries(failures)
     check_source_data_files_close_on_parse_failure(failures)
     check_source_refresh_is_atomic(failures)
+    check_readme_data_update_is_atomic(failures)
     check_hosts_file(failures)
     check_readme_data(failures)
 
@@ -622,6 +710,10 @@ def main():
             "os.replace(temporary_path, destination)" in updater and
             "os.fsync(temporary_file.fileno())" in updater,
             "updateFile.py must atomically replace refreshed source hosts files",
+            failures)
+    require("write_json_file_atomically(readme_file, readme_data)" in updater and
+            'prefix=".readme-data-"' in updater,
+            "updateFile.py must atomically replace generated README metadata",
             failures)
     require("re.escape(" in updater,
             "updateFile.py must escape custom exclusion domains before compiling regexes",
@@ -677,6 +769,7 @@ def main():
     atomic_refresh_plan = ATOMIC_REFRESH_PLAN.read_text(encoding="utf-8") if ATOMIC_REFRESH_PLAN.exists() else ""
     target_ip_plan = TARGET_IP_PLAN.read_text(encoding="utf-8") if TARGET_IP_PLAN.exists() else ""
     output_symlink_plan = OUTPUT_SYMLINK_PLAN.read_text(encoding="utf-8") if OUTPUT_SYMLINK_PLAN.exists() else ""
+    atomic_readme_data_plan = ATOMIC_README_DATA_PLAN.read_text(encoding="utf-8") if ATOMIC_README_DATA_PLAN.exists() else ""
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
             failures)
@@ -795,6 +888,12 @@ jobs:
             "symbolic links resolve outside" in changes,
             "Docs must record symlink-aware output containment",
             failures)
+    require("`readmeData.json` updates are atomically replaced" in readme and
+            "atomic metadata replacement" in security.lower() and
+            "`readmeData.json` atomically" in vision and
+            "`readmeData.json` writes atomic" in changes,
+            "Docs must record atomic README metadata replacement",
+            failures)
     atomic_refresh_statuses = re.findall(
         r"^status: .+$", atomic_refresh_plan, flags=re.MULTILINE
     )
@@ -859,6 +958,31 @@ jobs:
                           output_symlink_verification,
                           re.IGNORECASE) is None,
             "output symlink containment plan must record completed status and actual local verification",
+            failures)
+    atomic_readme_data_statuses = re.findall(
+        r"^status: .+$", atomic_readme_data_plan, flags=re.MULTILINE
+    )
+    atomic_readme_data_sections = atomic_readme_data_plan.split(
+        "## Verification Completed\n", 1
+    )
+    atomic_readme_data_verification = (
+        atomic_readme_data_sections[1]
+        if len(atomic_readme_data_sections) == 2 else ""
+    )
+    atomic_readme_data_required_evidence = (
+        "All four Make gates",
+        "python3 -m py_compile updateFile.py scripts/check-baseline.py",
+        "PYTHONDONTWRITEBYTECODE=1 python3 updateFile.py --help",
+        "git diff --check",
+        "Five isolated hostile mutations",
+    )
+    require(atomic_readme_data_statuses == ["status: completed"]
+            and all(item in atomic_readme_data_verification
+                    for item in atomic_readme_data_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b",
+                          atomic_readme_data_verification,
+                          re.IGNORECASE) is None,
+            "atomic README metadata plan must record completed status and actual local verification",
             failures)
 
     if failures:
