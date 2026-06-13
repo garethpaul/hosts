@@ -57,8 +57,8 @@ The checked-in `hosts` file is a generated snapshot. The updater references sour
 - Custom exclusions must be plain domains, and they are escaped before regex
   compilation so domain dots are matched literally. Custom exclusions are
   normalized to lowercase before matching generated hosts entries.
-- Output subfolders must be relative paths without parent traversal, so
-  generated hosts files stay inside the repository tree.
+- Output subfolders must be relative paths without parent traversal, and their
+  symlinks must resolve inside the repository tree.
 - Do not run replacement actions against `/etc/hosts` unless you understand the local impact and have a rollback copy.
 
 ## Testing and Verification
@@ -84,7 +84,7 @@ building source data. Refreshed source files are written and synced beside the
 cached file, then atomically replaced so failures preserve the last known-good
 source and remove incomplete temporary files.
 Output subfolders are checked so updater writes cannot target paths outside the
-repository through absolute paths or parent traversal.
+repository through absolute paths, parent traversal, or escaping symlinks.
 The `--ip` target must be a valid IPv4 or IPv6 literal and is rejected before
 source discovery or output generation if it contains whitespace, a hostname,
 an out-of-range address, or injected lines.
@@ -114,8 +114,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
 - Upstream entries are normalized only when their hostnames use valid DNS
   labels; underscores, empty labels, and leading or trailing hyphens are
   rejected, as are overlong labels or names.
-- Output subfolders must stay inside the repository before generated hosts data
-  is written.
+- Output subfolders and symlink targets must stay inside the repository before
+  generated hosts data is written.
 - `updateFile.py --replace` and DNS flush behavior can affect the local machine's `/etc/hosts`; review generated output and keep backups before privileged replacement.
 
 ## Maintenance Notes

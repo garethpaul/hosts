@@ -2,6 +2,8 @@
 
 ## 2026-06-13
 
+- Rejected output subfolders whose symbolic links resolve outside the
+  repository while preserving internal symlink targets.
 - Validated `--ip` as a strict IPv4 or IPv6 literal before source discovery or
   output generation, rejecting hostnames, malformed addresses, whitespace, and
   line injection.

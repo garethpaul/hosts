@@ -27,7 +27,8 @@ Priority:
 - Keep custom exclusion inputs limited to plain domains before regex compilation
 - Normalize custom exclusions to lowercase before matching generated hostnames
 - Ensure source URLs use HTTPS and include hosts before the updater fetches them
-- Keep output subfolders inside the repository before generated hosts writes
+- Keep output subfolders, including symlink resolution, inside the repository
+  before generated hosts writes
 - Keep `make lint`, `make test`, `make build`, and `make check` available as
   local verification gates
 - Keep GitHub Actions running the no-network `make check` baseline
@@ -69,7 +70,8 @@ Source authorities reject credentials, IP literals, malformed ports, and
 invalid DNS labels before network access; redirects remain inside that policy.
 Source refreshes sync a same-directory temporary file before atomic replacement,
 preserving the last known-good source and cleaning up partial writes on failure.
-Output subfolders are constrained to relative paths within the repository.
+Output subfolders are constrained to relative paths whose symlinks resolve
+within the repository.
 Custom exclusions are normalized to lowercase before matching generated hosts.
 
 ## What We Will Not Merge (For Now)
