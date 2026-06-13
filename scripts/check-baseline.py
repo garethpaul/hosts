@@ -30,6 +30,7 @@ ATOMIC_REFRESH_PLAN = ROOT / "docs/plans/2026-06-12-atomic-source-refresh.md"
 TARGET_IP_PLAN = ROOT / "docs/plans/2026-06-13-target-ip-validation.md"
 OUTPUT_SYMLINK_PLAN = ROOT / "docs/plans/2026-06-13-output-symlink-containment.md"
 ATOMIC_README_DATA_PLAN = ROOT / "docs/plans/2026-06-13-atomic-readme-metadata.md"
+LOCATION_INDEPENDENT_MAKE_PLAN = ROOT / "docs/plans/2026-06-13-location-independent-make.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -672,6 +673,7 @@ def main():
         "docs/plans/2026-06-13-target-ip-validation.md",
         "docs/plans/2026-06-13-output-symlink-containment.md",
         "docs/plans/2026-06-13-atomic-readme-metadata.md",
+        "docs/plans/2026-06-13-location-independent-make.md",
     ]
 
     for relative_path in required_files:
@@ -770,8 +772,13 @@ def main():
     target_ip_plan = TARGET_IP_PLAN.read_text(encoding="utf-8") if TARGET_IP_PLAN.exists() else ""
     output_symlink_plan = OUTPUT_SYMLINK_PLAN.read_text(encoding="utf-8") if OUTPUT_SYMLINK_PLAN.exists() else ""
     atomic_readme_data_plan = ATOMIC_README_DATA_PLAN.read_text(encoding="utf-8") if ATOMIC_README_DATA_PLAN.exists() else ""
+    location_independent_make_plan = LOCATION_INDEPENDENT_MAKE_PLAN.read_text(encoding="utf-8") if LOCATION_INDEPENDENT_MAKE_PLAN.exists() else ""
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
+            failures)
+    require("ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))" in makefile and
+            '@python3 "$(ROOT)/scripts/check-baseline.py"' in makefile,
+            "Makefile must invoke the checker through the loaded repository root",
             failures)
     expected_workflow = """name: Check
 
@@ -827,6 +834,13 @@ jobs:
             failures)
     require("GitHub Actions" in changes and "https source" in changes.lower() and "timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "lowercase" in changes.lower() and "response" in changes.lower() and "source metadata file handles" in changes.lower() and "source output file handles" in changes.lower() and "source urls" in changes.lower() and "output subfolders" in changes.lower() and "make lint" in changes and "make test" in changes and "make build" in changes,
             "CHANGES must record updater timeout and generated hosts baseline updates",
+            failures)
+    require("absolute Makefile path" in readme and "any working directory" in readme,
+            "README must document location-independent Make verification",
+            failures)
+    require("Make verification target derive the checkout root" in changes and
+            "external directories" in changes,
+            "CHANGES must record location-independent Make verification",
             failures)
     require("__pycache__/" in gitignore and "*.py[cod]" in gitignore and ".env" in gitignore,
             ".gitignore must exclude Python caches and local environment files",
@@ -983,6 +997,32 @@ jobs:
                           atomic_readme_data_verification,
                           re.IGNORECASE) is None,
             "atomic README metadata plan must record completed status and actual local verification",
+            failures)
+    location_independent_statuses = re.findall(
+        r"^status: .+$", location_independent_make_plan, flags=re.MULTILINE
+    )
+    location_independent_sections = location_independent_make_plan.split(
+        "## Verification Completed\n", 1
+    )
+    location_independent_verification = (
+        location_independent_sections[1]
+        if len(location_independent_sections) == 2 else ""
+    )
+    location_independent_required = (
+        "Root and external-directory Make gates passed",
+        "root-derivation mutation failed",
+        "checker-invocation mutation failed",
+        "plan-status mutation failed",
+        "plan-evidence mutation failed",
+        "documentation mutation failed",
+    )
+    require(location_independent_statuses == ["status: completed"]
+            and all(item in location_independent_verification
+                    for item in location_independent_required)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b",
+                          location_independent_verification,
+                          re.IGNORECASE) is None,
+            "location-independent Make plan must record completed status and actual verification",
             failures)
 
     if failures:

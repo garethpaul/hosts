@@ -1,6 +1,6 @@
 # Location-Independent Hosts Verification
 
-status: planned
+status: completed
 
 ## Context
 
@@ -38,8 +38,21 @@ caller-relative recipe; no output files or system hosts state are modified.
 
 ## Work Completed
 
-Pending implementation.
+- Derived `ROOT` from the loaded Makefile and invoked the checker through its
+  absolute repository path.
+- Added rooted-recipe, completed-plan, external-run, and synchronized-guidance
+  contracts.
+- Preserved updater behavior, generated data, dependencies, and workflows.
 
 ## Verification Completed
 
-Pending implementation and validation. Run `make check` before completion.
+- Root and external-directory Make gates passed for `lint`, `test`, `build`,
+  and `check`; every target exercised the complete generated-data baseline.
+- The root-derivation mutation failed.
+- The checker-invocation mutation failed.
+- The plan-status mutation failed.
+- The plan-evidence mutation failed.
+- The documentation mutation failed.
+- Python compilation, updater help, shell syntax, dependency-manifest
+  inventory, diff hygiene, exact intended-path review, secret scanning, and
+  generated-artifact inspection passed. No dependency manifest is tracked.
