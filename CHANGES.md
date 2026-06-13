@@ -2,6 +2,8 @@
 
 ## 2026-06-13
 
+- Made every Make verification target derive the checkout root so the
+  generated-data baseline works from external directories.
 - Rejected output subfolders whose symbolic links resolve outside the
   repository while preserving internal symlink targets.
 - Validated `--ip` as a strict IPv4 or IPv6 literal before source discovery or
