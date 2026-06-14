@@ -1,5 +1,10 @@
 # Changes
 
+## 2026-06-14
+
+- Ensured credential-bearing source URLs are never reproduced in refresh logs
+  while preserving non-sensitive source-directory context.
+
 ## 2026-06-13
 
 - Made every Make verification target derive the checkout root so the

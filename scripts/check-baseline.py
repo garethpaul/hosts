@@ -31,6 +31,7 @@ TARGET_IP_PLAN = ROOT / "docs/plans/2026-06-13-target-ip-validation.md"
 OUTPUT_SYMLINK_PLAN = ROOT / "docs/plans/2026-06-13-output-symlink-containment.md"
 ATOMIC_README_DATA_PLAN = ROOT / "docs/plans/2026-06-13-atomic-readme-metadata.md"
 LOCATION_INDEPENDENT_MAKE_PLAN = ROOT / "docs/plans/2026-06-13-location-independent-make.md"
+CREDENTIAL_SAFE_REFRESH_LOGGING_PLAN = ROOT / "docs/plans/2026-06-14-credential-safe-refresh-logging.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -460,6 +461,56 @@ def check_source_refresh_is_atomic(failures):
                 failures)
 
 
+def check_source_refresh_logs_hide_credentials(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        source_directory = Path(temporary_directory) / "source"
+        source_directory.mkdir()
+        metadata_path = source_directory / "update.json"
+        credential_url = "https://user:secret@example.test/hosts"
+        metadata_path.write_text(
+            json.dumps({"url": credential_url}), encoding="utf-8")
+        destination = source_directory / "hosts"
+        destination.write_text("last-known-good\n", encoding="utf-8")
+        attempted_fetches = []
+
+        def fail_if_fetched(url, timeout):
+            attempted_fetches.append((url, timeout))
+            raise AssertionError("credential-bearing URL must not be fetched")
+
+        namespace["BASEDIR_PATH"] = temporary_directory
+        namespace["recursive_glob"] = lambda root, filename: [str(metadata_path)]
+        namespace["open_source_url"] = fail_if_fetched
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            namespace["update_all_sources"]("update.json", "hosts")
+
+        refresh_output = output.getvalue()
+        require(not attempted_fetches,
+                "credential-bearing source URLs must be rejected before fetching",
+                failures)
+        require("secret" not in refresh_output and
+                credential_url not in refresh_output,
+                "source refresh logs must not reproduce rejected credentials or URLs",
+                failures)
+        require(str(source_directory) in refresh_output,
+                "source refresh logs must retain non-sensitive source context",
+                failures)
+        require(destination.read_text(encoding="utf-8") == "last-known-good\n",
+                "rejected source URLs must preserve the last known-good source file",
+                failures)
+
+
 def check_readme_data_update_is_atomic(failures):
     namespace = {
         "__file__": str(ROOT / "updateFile.py"),
@@ -640,6 +691,17 @@ def check_readme_data(failures):
 
 def main():
     failures = []
+    checker_tree = ast.parse(read("scripts/check-baseline.py"))
+    main_function = next(
+        node for node in checker_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "main"
+    )
+    require(any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "check_source_refresh_logs_hide_credentials"
+        for node in ast.walk(main_function)
+    ), "baseline main must execute credential-safe refresh log coverage", failures)
     required_files = [
         ".github/CODEOWNERS",
         ".gitignore",
@@ -674,6 +736,7 @@ def main():
         "docs/plans/2026-06-13-output-symlink-containment.md",
         "docs/plans/2026-06-13-atomic-readme-metadata.md",
         "docs/plans/2026-06-13-location-independent-make.md",
+        "docs/plans/2026-06-14-credential-safe-refresh-logging.md",
     ]
 
     for relative_path in required_files:
@@ -691,6 +754,7 @@ def main():
     check_source_redirect_and_size_boundaries(failures)
     check_source_data_files_close_on_parse_failure(failures)
     check_source_refresh_is_atomic(failures)
+    check_source_refresh_logs_hide_credentials(failures)
     check_readme_data_update_is_atomic(failures)
     check_hosts_file(failures)
     check_readme_data(failures)
@@ -712,6 +776,12 @@ def main():
             "os.replace(temporary_path, destination)" in updater and
             "os.fsync(temporary_file.fileno())" in updater,
             "updateFile.py must atomically replace refreshed source hosts files",
+            failures)
+    require('print("Updating source " + source_context)' in updater and
+            'print("Error in updating source: " + source_context)' in updater and
+            '" from " + update_url' not in updater and
+            'print("Error in updating source: ", update_url)' not in updater,
+            "updateFile.py must not reproduce configured URLs in source refresh logs",
             failures)
     require("write_json_file_atomically(readme_file, readme_data)" in updater and
             'prefix=".readme-data-"' in updater,
@@ -773,6 +843,7 @@ def main():
     output_symlink_plan = OUTPUT_SYMLINK_PLAN.read_text(encoding="utf-8") if OUTPUT_SYMLINK_PLAN.exists() else ""
     atomic_readme_data_plan = ATOMIC_README_DATA_PLAN.read_text(encoding="utf-8") if ATOMIC_README_DATA_PLAN.exists() else ""
     location_independent_make_plan = LOCATION_INDEPENDENT_MAKE_PLAN.read_text(encoding="utf-8") if LOCATION_INDEPENDENT_MAKE_PLAN.exists() else ""
+    credential_safe_refresh_logging_plan = CREDENTIAL_SAFE_REFRESH_LOGGING_PLAN.read_text(encoding="utf-8") if CREDENTIAL_SAFE_REFRESH_LOGGING_PLAN.exists() else ""
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
             failures)
@@ -841,6 +912,15 @@ jobs:
     require("Make verification target derive the checkout root" in changes and
             "external directories" in changes,
             "CHANGES must record location-independent Make verification",
+            failures)
+    credential_safe_guidance = "credential-bearing source URLs are never reproduced in refresh logs"
+    normalized_guidance = [
+        " ".join(document.lower().split())
+        for document in [readme, security, vision, changes, read("AGENTS.md")]
+    ]
+    require(all(credential_safe_guidance.lower() in document
+                for document in normalized_guidance),
+            "project guidance must document credential-safe source refresh logging",
             failures)
     require("__pycache__/" in gitignore and "*.py[cod]" in gitignore and ".env" in gitignore,
             ".gitignore must exclude Python caches and local environment files",
@@ -1023,6 +1103,32 @@ jobs:
                           location_independent_verification,
                           re.IGNORECASE) is None,
             "location-independent Make plan must record completed status and actual verification",
+            failures)
+    credential_logging_statuses = re.findall(
+        r"^status: .+$", credential_safe_refresh_logging_plan,
+        flags=re.MULTILINE
+    )
+    credential_logging_sections = credential_safe_refresh_logging_plan.split(
+        "## Verification Completed\n", 1
+    )
+    credential_logging_verification = (
+        credential_logging_sections[1]
+        if len(credential_logging_sections) == 2 else ""
+    )
+    credential_logging_required = (
+        "All four Make gates",
+        "absolute Makefile check",
+        "python3 -m py_compile updateFile.py scripts/check-baseline.py",
+        "Two isolated hostile mutations",
+        "git diff --check",
+    )
+    require(credential_logging_statuses == ["status: completed"]
+            and all(item in credential_logging_verification
+                    for item in credential_logging_required)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b",
+                          credential_logging_verification,
+                          re.IGNORECASE) is None,
+            "credential-safe refresh logging plan must record completed status and actual verification",
             failures)
 
     if failures:

@@ -51,6 +51,8 @@ source lists.
 - See `VISION.md` for project direction and contribution guardrails.
 - Keep source downloads credential-free, HTTPS-only across redirects, bounded
   to 32 MiB, and protected by the documented timeout.
+- Ensure credential-bearing source URLs are never reproduced in refresh logs;
+  log only non-sensitive source context.
 - Keep source refreshes atomic so failed writes preserve last-known-good data
   and remove incomplete temporary files.
 - Never run updater replacement or DNS-flush options during automated testing;

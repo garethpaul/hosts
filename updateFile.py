@@ -558,9 +558,9 @@ def update_all_sources(source_data_filename, host_filename):
         with open(source, "r") as update_file:
             update_data = json.load(update_file)
         update_url = update_data["url"]
+        source_context = os.path.dirname(source)
 
-        print("Updating source " + os.path.dirname(
-            source) + " from " + update_url)
+        print("Updating source " + source_context)
 
         try:
             updated_file = get_file_by_url(update_url)
@@ -573,7 +573,7 @@ def update_all_sources(source_data_filename, host_filename):
                                            host_filename)
             write_source_file_atomically(destination, updated_file)
         except Exception:
-            print("Error in updating source: ", update_url)
+            print("Error in updating source: " + source_context)
 # End Update Logic
 
 

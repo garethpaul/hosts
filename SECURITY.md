@@ -42,6 +42,8 @@ Helpful reports include:
 - Source fetches reject credentials, IP literals, malformed authorities, and
   HTTPS redirects that leave the validated DNS-host boundary. Responses retain
   a 30-second timeout and a 32 MiB read limit.
+- Credential-bearing source URLs are never reproduced in refresh logs; failure
+  messages retain only non-sensitive source context.
 - Source refreshes preserve the last known-good cached file until a complete
   replacement has been written and synced, and remove partial temporary files.
 - Generated provenance uses atomic metadata replacement so an interrupted

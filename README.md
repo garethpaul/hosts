@@ -83,6 +83,8 @@ Source metadata file handles are also checked so JSON reads close promptly while
 building source data. Refreshed source files are written and synced beside the
 cached file, then atomically replaced so failures preserve the last known-good
 source and remove incomplete temporary files.
+Credential-bearing source URLs are never reproduced in refresh logs; refresh
+messages retain only the non-sensitive source directory.
 Output subfolders are checked so updater writes cannot target paths outside the
 repository through absolute paths, parent traversal, or escaping symlinks.
 The `--ip` target must be a valid IPv4 or IPv6 literal and is rejected before

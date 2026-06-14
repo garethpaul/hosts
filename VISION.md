@@ -33,6 +33,7 @@ Priority:
   local verification gates
 - Keep GitHub Actions running the no-network `make check` baseline
 - Keep source redirects HTTPS-only and source responses bounded to 32 MiB
+- Ensure credential-bearing source URLs are never reproduced in refresh logs
 - Validate `--ip` as a strict IPv4 or IPv6 literal before source or output work
 
 Next priorities:
