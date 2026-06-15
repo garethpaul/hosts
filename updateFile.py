@@ -176,7 +176,9 @@ def main():
                                        sourcedatafilename=source_data_filename)
 
     merge_file = create_initial_file()
-    remove_old_hosts_file(settings["backup"])
+    selected_hosts_file = path_join_robust(
+        settings["outputpath"], settings["hostfilename"])
+    remove_old_hosts_file(settings["backup"], selected_hosts_file)
     final_file = remove_dups_and_excl(merge_file, exclusion_regexes)
 
     number_of_rules = settings["numberofrules"]
@@ -1023,7 +1025,7 @@ def flush_dns_cache():
             print_failure("Unable to determine DNS management tool.")
 
 
-def remove_old_hosts_file(backup):
+def remove_old_hosts_file(backup, old_file_path):
     """
     Remove the old hosts file.
 
@@ -1034,24 +1036,23 @@ def remove_old_hosts_file(backup):
     ----------
     backup : boolean, default False
         Whether or not to backup the existing hosts file.
+    old_file_path : str
+        The selected hosts output file to remove before regeneration.
     """
 
-    old_file_path = path_join_robust(BASEDIR_PATH, "hosts")
-
-    # Create if already removed, so remove won't raise an error.
-    open(old_file_path, "a").close()
+    if not os.path.lexists(old_file_path):
+        return
 
     if backup:
-        backup_file_path = path_join_robust(BASEDIR_PATH, "hosts-{}".format(
-            time.strftime("%Y-%m-%d-%H-%M-%S")))
+        backup_file_path = path_join_robust(
+            os.path.dirname(old_file_path),
+            "{}-{}".format(os.path.basename(old_file_path),
+                           time.strftime("%Y-%m-%d-%H-%M-%S")))
 
         # Make a backup copy, marking the date in which the list was updated
         shutil.copy(old_file_path, backup_file_path)
 
     os.remove(old_file_path)
-
-    # Create new empty hosts file
-    open(old_file_path, "a").close()
 # End File Logic
 
 

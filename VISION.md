@@ -29,6 +29,7 @@ Priority:
 - Ensure source URLs use HTTPS and include hosts before the updater fetches them
 - Keep output subfolders, including symlink resolution, inside the repository
   before generated hosts writes
+- Alternate --output generation removes or backs up only the selected hosts file and leaves the repository-root hosts data unchanged.
 - Keep `make lint`, `make test`, `make build`, and `make check` available as
   local verification gates
 - Keep GitHub Actions running the no-network `make check` baseline

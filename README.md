@@ -59,6 +59,7 @@ The checked-in `hosts` file is a generated snapshot. The updater references sour
   normalized to lowercase before matching generated hosts entries.
 - Output subfolders must be relative paths without parent traversal, and their
   symlinks must resolve inside the repository tree.
+- Alternate --output generation removes or backs up only the selected hosts file and leaves the repository-root hosts data unchanged.
 - Do not run replacement actions against `/etc/hosts` unless you understand the local impact and have a rollback copy.
 
 ## Testing and Verification

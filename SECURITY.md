@@ -53,6 +53,7 @@ Helpful reports include:
 - Output subfolders and resolved symlink targets should stay inside the
   repository tree so generated hosts writes cannot escape through absolute
   paths, parent traversal, or external symbolic links.
+- Alternate --output generation removes or backs up only the selected hosts file and leaves the repository-root hosts data unchanged.
 - The generated-rule `--ip` target must be a strict IPv4 or IPv6 literal;
   whitespace, hostnames, malformed addresses, and line injection are rejected
   before source refresh or file generation.

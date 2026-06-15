@@ -2,6 +2,7 @@
 
 ## 2026-06-15
 
+- Alternate --output generation removes or backs up only the selected hosts file and leaves the repository-root hosts data unchanged.
 - Source fetch exceptions are reported generically without URL, query, or
   exception details.
 

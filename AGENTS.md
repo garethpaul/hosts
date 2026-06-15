@@ -55,6 +55,7 @@ source lists.
   log only non-sensitive source context.
 - Ensure source fetch exceptions are reported generically without URL, query,
   or exception details.
+- Alternate --output generation removes or backs up only the selected hosts file and leaves the repository-root hosts data unchanged.
 - Keep source refreshes atomic so failed writes preserve last-known-good data
   and remove incomplete temporary files.
 - Never run updater replacement or DNS-flush options during automated testing;

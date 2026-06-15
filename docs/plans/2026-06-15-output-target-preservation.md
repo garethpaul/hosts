@@ -1,6 +1,6 @@
 # Preserve Alternate Output Targets
 
-status: planned
+status: completed
 
 ## Context
 
@@ -67,3 +67,25 @@ file even though generation writes to the selected subfolder.
   credential patterns.
 - Push a stacked pull request and take one bounded exact-head hosted and
   security-alert snapshot without polling.
+
+## Work Completed
+
+- Bound cleanup and backup to the selected output hosts path.
+- Preserved repository-root hosts data during alternate output generation.
+- Added isolated root, alternate, backup, and missing-target contracts plus
+  synchronized maintenance guidance.
+
+## Verification Completed
+
+- All four Make gates passed on the exact candidate implementation.
+- The absolute Makefile passed from `/tmp`.
+- `python3 -m py_compile updateFile.py scripts/check-baseline.py`,
+  `PYTHONDONTWRITEBYTECODE=1 python3 updateFile.py --help`, and
+  `git diff --check` passed.
+- Six hostile mutations were rejected across implicit root cleanup,
+  selected-target binding, root preservation, backup placement, guidance, and
+  plan evidence.
+- Exact intended-path, generated-artifact, generated-data/workflow exclusion,
+  conflict-marker, whitespace, and changed-line credential scan passed.
+- The hosted pull-request and security-alert snapshot is recorded separately
+  after push; this plan claims only completed pre-push verification above.

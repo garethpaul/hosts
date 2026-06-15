@@ -33,6 +33,7 @@ ATOMIC_README_DATA_PLAN = ROOT / "docs/plans/2026-06-13-atomic-readme-metadata.m
 LOCATION_INDEPENDENT_MAKE_PLAN = ROOT / "docs/plans/2026-06-13-location-independent-make.md"
 CREDENTIAL_SAFE_REFRESH_LOGGING_PLAN = ROOT / "docs/plans/2026-06-14-credential-safe-refresh-logging.md"
 NETWORK_ERROR_REDACTION_PLAN = ROOT / "docs/plans/2026-06-15-network-error-redaction.md"
+OUTPUT_TARGET_PLAN = ROOT / "docs/plans/2026-06-15-output-target-preservation.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -156,6 +157,76 @@ def check_output_subfolder_validation(failures):
                 failures)
         require(not validator("escape-link"),
                 "--output must reject symlinks that resolve outside the repository",
+                failures)
+
+
+def check_output_target_cleanup(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    cleanup = namespace["remove_old_hosts_file"]
+    with tempfile.TemporaryDirectory() as temporary_root:
+        repository = Path(temporary_root) / "repository"
+        alternate = repository / "generated"
+        alternate.mkdir(parents=True)
+        root_hosts = repository / "hosts"
+        alternate_hosts = alternate / "hosts"
+        root_hosts.write_text("root hosts\n", encoding="utf-8")
+        alternate_hosts.write_text("alternate hosts\n", encoding="utf-8")
+
+        cleanup(False, str(alternate_hosts))
+        require(root_hosts.read_text(encoding="utf-8") == "root hosts\n",
+                "alternate output cleanup must preserve repository-root hosts data",
+                failures)
+        require(not alternate_hosts.exists(),
+                "alternate output cleanup must remove only the selected hosts file",
+                failures)
+
+        alternate_hosts.write_text("alternate backup\n", encoding="utf-8")
+        cleanup(True, str(alternate_hosts))
+        backups = list(alternate.glob("hosts-*"))
+        require(len(backups) == 1 and
+                backups[0].read_text(encoding="utf-8") == "alternate backup\n",
+                "alternate output backup must remain beside the selected hosts file",
+                failures)
+        require(not list(repository.glob("hosts-*")),
+                "alternate output backup must not create a repository-root backup",
+                failures)
+
+        cleanup(False, str(root_hosts))
+        require(not root_hosts.exists(),
+                "default output cleanup must still remove repository-root hosts",
+                failures)
+        root_hosts.write_text("root backup\n", encoding="utf-8")
+        cleanup(True, str(root_hosts))
+        root_backups = list(repository.glob("hosts-*"))
+        require(len(root_backups) == 1 and
+                root_backups[0].read_text(encoding="utf-8") == "root backup\n",
+                "default output backup must remain beside repository-root hosts",
+                failures)
+
+        missing_hosts = repository / "new-output" / "hosts"
+        cleanup(False, str(missing_hosts))
+        require(not missing_hosts.parent.exists(),
+                "missing selected output must not require placeholder creation",
+                failures)
+
+        external_hosts = Path(temporary_root) / "external-hosts"
+        external_hosts.write_text("external hosts\n", encoding="utf-8")
+        selected_link = alternate / "hosts-link"
+        selected_link.symlink_to(external_hosts)
+        cleanup(False, str(selected_link))
+        require(not selected_link.exists() and
+                external_hosts.read_text(encoding="utf-8") == "external hosts\n",
+                "selected hosts symlink cleanup must unlink without changing its target",
                 failures)
 
 
@@ -738,6 +809,11 @@ def main():
         node for node in checker_tree.body
         if isinstance(node, ast.FunctionDef) and node.name == "main"
     )
+    output_target_check = next(
+        node for node in checker_tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "check_output_target_cleanup"
+    )
     require(any(
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
@@ -750,6 +826,28 @@ def main():
         and node.func.id == "check_source_fetch_errors_hide_url_details"
         for node in ast.walk(main_function)
     ), "baseline main must execute source-fetch error redaction coverage", failures)
+    require(any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "check_output_target_cleanup"
+        for node in ast.walk(main_function)
+    ), "baseline main must execute selected output cleanup coverage", failures)
+    require(any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "root_hosts"
+        and node.func.attr == "read_text"
+        for node in ast.walk(output_target_check)
+    ), "selected output coverage must assert repository-root hosts preservation", failures)
+    require(any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "alternate"
+        and node.func.attr == "glob"
+        for node in ast.walk(output_target_check)
+    ), "selected output coverage must assert alternate backup placement", failures)
     required_files = [
         ".github/CODEOWNERS",
         ".gitignore",
@@ -786,6 +884,7 @@ def main():
         "docs/plans/2026-06-13-location-independent-make.md",
         "docs/plans/2026-06-14-credential-safe-refresh-logging.md",
         "docs/plans/2026-06-15-network-error-redaction.md",
+        "docs/plans/2026-06-15-output-target-preservation.md",
     ]
 
     for relative_path in required_files:
@@ -796,6 +895,7 @@ def main():
     check_exclusion_regex_escaping(failures)
     check_exclusion_domain_validation(failures)
     check_output_subfolder_validation(failures)
+    check_output_target_cleanup(failures)
     check_source_hostname_validation(failures)
     check_target_ip_validation(failures)
     check_source_fetch_closes_response(failures)
@@ -856,6 +956,13 @@ def main():
             "parser.error(\"--output must resolve to a relative subfolder inside the repository\")" in updater,
             "updateFile.py must reject unsafe output subfolders before writing generated hosts files",
             failures)
+    require('settings["outputpath"], settings["hostfilename"]' in updater and
+            'remove_old_hosts_file(settings["backup"], selected_hosts_file)' in updater and
+            "def remove_old_hosts_file(backup, old_file_path):" in updater and
+            "os.path.dirname(old_file_path)" in updater and
+            "os.path.basename(old_file_path)" in updater,
+            "updateFile.py must clean up and back up only the selected output hosts file",
+            failures)
     require("is_valid_source_hostname(hostname)" in updater and "hostname_format_regex" in updater,
             "updateFile.py must reject malformed upstream hostnames before output",
             failures)
@@ -899,6 +1006,7 @@ def main():
     location_independent_make_plan = LOCATION_INDEPENDENT_MAKE_PLAN.read_text(encoding="utf-8") if LOCATION_INDEPENDENT_MAKE_PLAN.exists() else ""
     credential_safe_refresh_logging_plan = CREDENTIAL_SAFE_REFRESH_LOGGING_PLAN.read_text(encoding="utf-8") if CREDENTIAL_SAFE_REFRESH_LOGGING_PLAN.exists() else ""
     network_error_redaction_plan = NETWORK_ERROR_REDACTION_PLAN.read_text(encoding="utf-8") if NETWORK_ERROR_REDACTION_PLAN.exists() else ""
+    output_target_plan = OUTPUT_TARGET_PLAN.read_text(encoding="utf-8") if OUTPUT_TARGET_PLAN.exists() else ""
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
             failures)
@@ -1050,6 +1158,11 @@ jobs:
             "symbolic links resolve outside" in changes,
             "Docs must record symlink-aware output containment",
             failures)
+    output_target_guidance = "Alternate --output generation removes or backs up only the selected hosts file and leaves the repository-root hosts data unchanged."
+    require(all(output_target_guidance in document for document in
+                [readme, security, vision, changes, read("AGENTS.md")]),
+            "Docs must record selected output cleanup ownership",
+            failures)
     require("`readmeData.json` updates are atomically replaced" in readme and
             "atomic metadata replacement" in security.lower() and
             "`readmeData.json` atomically" in vision and
@@ -1197,6 +1310,31 @@ jobs:
                           credential_logging_verification,
                           re.IGNORECASE) is None,
             "credential-safe refresh logging plan must record completed status and actual verification",
+            failures)
+    output_target_statuses = re.findall(
+        r"^status: .+$", output_target_plan, flags=re.MULTILINE
+    )
+    output_target_sections = output_target_plan.split(
+        "## Verification Completed\n", 1
+    )
+    output_target_verification = (
+        output_target_sections[1] if len(output_target_sections) == 2 else ""
+    )
+    output_target_required = (
+        "All four Make gates passed",
+        "absolute Makefile passed from `/tmp`",
+        "python3 -m py_compile updateFile.py scripts/check-baseline.py",
+        "hostile mutations were rejected",
+        "changed-line credential scan passed",
+        "hosted pull-request and security-alert snapshot",
+    )
+    require(output_target_statuses == ["status: completed"]
+            and all(item in output_target_verification
+                    for item in output_target_required)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b",
+                          output_target_verification,
+                          re.IGNORECASE) is None,
+            "selected output preservation plan must record completed verification",
             failures)
 
     if failures:
