@@ -44,6 +44,8 @@ Helpful reports include:
   a 30-second timeout and a 32 MiB read limit.
 - Credential-bearing source URLs are never reproduced in refresh logs; failure
   messages retain only non-sensitive source context.
+- Source fetch exceptions are reported generically without URL, query, or
+  exception details.
 - Source refreshes preserve the last known-good cached file until a complete
   replacement has been written and synced, and remove partial temporary files.
 - Generated provenance uses atomic metadata replacement so an interrupted

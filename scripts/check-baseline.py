@@ -32,6 +32,7 @@ OUTPUT_SYMLINK_PLAN = ROOT / "docs/plans/2026-06-13-output-symlink-containment.m
 ATOMIC_README_DATA_PLAN = ROOT / "docs/plans/2026-06-13-atomic-readme-metadata.md"
 LOCATION_INDEPENDENT_MAKE_PLAN = ROOT / "docs/plans/2026-06-13-location-independent-make.md"
 CREDENTIAL_SAFE_REFRESH_LOGGING_PLAN = ROOT / "docs/plans/2026-06-14-credential-safe-refresh-logging.md"
+NETWORK_ERROR_REDACTION_PLAN = ROOT / "docs/plans/2026-06-15-network-error-redaction.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -511,6 +512,47 @@ def check_source_refresh_logs_hide_credentials(failures):
                 failures)
 
 
+def check_source_fetch_errors_hide_url_details(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    sensitive_url = "https://example.test/hosts?token=super-secret"
+    attempted_fetches = []
+
+    def fail_with_url(url, timeout):
+        attempted_fetches.append((url, timeout))
+        raise RuntimeError("request failed for " + url + " upstream detail")
+
+    namespace["open_source_url"] = fail_with_url
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        result = namespace["get_file_by_url"](sensitive_url)
+
+    fetch_output = output.getvalue()
+    require(attempted_fetches == [
+        (sensitive_url, namespace["SOURCE_DOWNLOAD_TIMEOUT_SECONDS"])
+    ], "valid token-bearing source URLs must still reach the fetch boundary", failures)
+    require(result is None,
+            "failed source fetches must still return None",
+            failures)
+    require("Problem getting source file." in fetch_output,
+            "failed source fetches must retain a visible generic message",
+            failures)
+    require(sensitive_url not in fetch_output and
+            "super-secret" not in fetch_output and
+            "upstream detail" not in fetch_output,
+            "source fetch failures must not reproduce URL, query, or exception details",
+            failures)
+
+
 def check_readme_data_update_is_atomic(failures):
     namespace = {
         "__file__": str(ROOT / "updateFile.py"),
@@ -702,6 +744,12 @@ def main():
         and node.func.id == "check_source_refresh_logs_hide_credentials"
         for node in ast.walk(main_function)
     ), "baseline main must execute credential-safe refresh log coverage", failures)
+    require(any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "check_source_fetch_errors_hide_url_details"
+        for node in ast.walk(main_function)
+    ), "baseline main must execute source-fetch error redaction coverage", failures)
     required_files = [
         ".github/CODEOWNERS",
         ".gitignore",
@@ -737,6 +785,7 @@ def main():
         "docs/plans/2026-06-13-atomic-readme-metadata.md",
         "docs/plans/2026-06-13-location-independent-make.md",
         "docs/plans/2026-06-14-credential-safe-refresh-logging.md",
+        "docs/plans/2026-06-15-network-error-redaction.md",
     ]
 
     for relative_path in required_files:
@@ -755,6 +804,7 @@ def main():
     check_source_data_files_close_on_parse_failure(failures)
     check_source_refresh_is_atomic(failures)
     check_source_refresh_logs_hide_credentials(failures)
+    check_source_fetch_errors_hide_url_details(failures)
     check_readme_data_update_is_atomic(failures)
     check_hosts_file(failures)
     check_readme_data(failures)
@@ -782,6 +832,10 @@ def main():
             '" from " + update_url' not in updater and
             'print("Error in updating source: ", update_url)' not in updater,
             "updateFile.py must not reproduce configured URLs in source refresh logs",
+            failures)
+    require('print("Problem getting source file.")' in updater and
+            'print("Problem getting source file: {0}".format(error))' not in updater,
+            "updateFile.py must redact source-fetch exception details",
             failures)
     require("write_json_file_atomically(readme_file, readme_data)" in updater and
             'prefix=".readme-data-"' in updater,
@@ -844,6 +898,7 @@ def main():
     atomic_readme_data_plan = ATOMIC_README_DATA_PLAN.read_text(encoding="utf-8") if ATOMIC_README_DATA_PLAN.exists() else ""
     location_independent_make_plan = LOCATION_INDEPENDENT_MAKE_PLAN.read_text(encoding="utf-8") if LOCATION_INDEPENDENT_MAKE_PLAN.exists() else ""
     credential_safe_refresh_logging_plan = CREDENTIAL_SAFE_REFRESH_LOGGING_PLAN.read_text(encoding="utf-8") if CREDENTIAL_SAFE_REFRESH_LOGGING_PLAN.exists() else ""
+    network_error_redaction_plan = NETWORK_ERROR_REDACTION_PLAN.read_text(encoding="utf-8") if NETWORK_ERROR_REDACTION_PLAN.exists() else ""
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
             failures)
@@ -922,6 +977,11 @@ jobs:
                 for document in normalized_guidance),
             "project guidance must document credential-safe source refresh logging",
             failures)
+    network_error_guidance = "source fetch exceptions are reported generically without URL, query, or exception details"
+    require(all(network_error_guidance.lower() in document
+                for document in normalized_guidance),
+            "project guidance must document source-fetch exception redaction",
+            failures)
     require("__pycache__/" in gitignore and "*.py[cod]" in gitignore and ".env" in gitignore,
             ".gitignore must exclude Python caches and local environment files",
             failures)
@@ -969,6 +1029,14 @@ jobs:
             failures)
     require("status: completed" in ci_policy_plan and "hostile workflow mutations" in ci_policy_plan.lower(),
             "CI policy plan must record completed mutation verification",
+            failures)
+    require("status: completed" in network_error_redaction_plan and
+            "all four make gates" in network_error_redaction_plan.lower() and
+            "absolute makefile check" in network_error_redaction_plan.lower() and
+            "python3 -m py_compile updatefile.py scripts/check-baseline.py" in network_error_redaction_plan.lower() and
+            "four isolated hostile mutations" in network_error_redaction_plan.lower() and
+            "git diff --check" in network_error_redaction_plan.lower(),
+            "network error redaction plan must record completed validation evidence",
             failures)
     require("valid IPv4 or IPv6 literal" in readme and "injected lines" in readme and
             "strict IPv4 or IPv6 literal" in security and "line injection" in security and

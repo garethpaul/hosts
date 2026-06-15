@@ -1,6 +1,6 @@
 # Network Error Redaction
 
-status: in_progress
+status: completed
 
 ## Context
 
@@ -47,8 +47,26 @@ timeout, response-size, decoding, or atomic replacement behavior.
 
 ## Work Completed
 
-Pending implementation.
+- Replaced interpolated source-fetch exception output with one generic failure
+  message while preserving the existing `None` return path.
+- Added executable offline coverage proving a valid query-bearing HTTPS URL is
+  fetched but its URL, token, and exception detail are not logged on failure.
+- Added static contracts for the generic message, checker invocation, completed
+  plan evidence, and synchronized project guidance.
+- Updated README, SECURITY, VISION, CHANGES, and AGENTS guidance to cover the
+  remaining exception-redaction boundary.
 
 ## Verification Completed
 
-Pending implementation and validation.
+- All four Make gates (`make check`, `make lint`, `make test`, and `make build`)
+  passed in an isolated completed-plan fixture.
+- The absolute Makefile check passed from an external directory.
+- `python3 -m py_compile updateFile.py scripts/check-baseline.py` passed with
+  bytecode redirected outside the repository.
+- `python3 updateFile.py --help` and the focused source-fetch redaction
+  regression passed.
+- Four isolated hostile mutations were rejected: exception-detail restoration,
+  regression invocation removal, generic-message removal, and plan-evidence
+  drift.
+- `git diff --check` and the final artifact, mode, and credential-shaped diff
+  audits passed before commit.

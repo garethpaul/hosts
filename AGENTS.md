@@ -53,6 +53,8 @@ source lists.
   to 32 MiB, and protected by the documented timeout.
 - Ensure credential-bearing source URLs are never reproduced in refresh logs;
   log only non-sensitive source context.
+- Ensure source fetch exceptions are reported generically without URL, query,
+  or exception details.
 - Keep source refreshes atomic so failed writes preserve last-known-good data
   and remove incomplete temporary files.
 - Never run updater replacement or DNS-flush options during automated testing;

@@ -1144,8 +1144,8 @@ def get_file_by_url(url):
             return source_data.decode("UTF-8")
         finally:
             f.close()
-    except Exception as error:
-        print("Problem getting source file: {0}".format(error))
+    except Exception:
+        print("Problem getting source file.")
 
 
 def write_data(f, data):

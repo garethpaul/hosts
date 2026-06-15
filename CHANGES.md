@@ -1,5 +1,10 @@
 # Changes
 
+## 2026-06-15
+
+- Source fetch exceptions are reported generically without URL, query, or
+  exception details.
+
 ## 2026-06-14
 
 - Ensured credential-bearing source URLs are never reproduced in refresh logs

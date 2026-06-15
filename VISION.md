@@ -34,6 +34,8 @@ Priority:
 - Keep GitHub Actions running the no-network `make check` baseline
 - Keep source redirects HTTPS-only and source responses bounded to 32 MiB
 - Ensure credential-bearing source URLs are never reproduced in refresh logs
+- Ensure source fetch exceptions are reported generically without URL, query,
+  or exception details
 - Validate `--ip` as a strict IPv4 or IPv6 literal before source or output work
 
 Next priorities:
