@@ -24,6 +24,8 @@ Helpful reports include:
 
 ## Project Security Posture
 
+Generated hosts outputs preserve the last good file until atomic publication.
+
 - This repository appears to be a public sample, documentation, or utility project. The active security scope is the code and documentation on the default branch.
 - Review found authentication, token, or session-related code paths; changes in those areas should receive security-focused review before merge.
 - Review found network clients, sockets, web APIs, or service endpoints; changes in those areas should receive security-focused review before merge.

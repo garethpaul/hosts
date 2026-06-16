@@ -1,6 +1,6 @@
 # Publish Generated Hosts Atomically
 
-Status: Planned
+Status: Completed
 
 ## Problem
 
@@ -110,3 +110,22 @@ filesystem, live-download, and privileged replacement validation.
   guidance, and plan status.
 - Audit the exact diff, generated artifacts/data, workflow/dependency drift,
   secrets, conflict markers, and whitespace before commit.
+
+## Verification Completed
+
+- All four Make gates passed the exact candidate and live implementation.
+- The absolute Makefile passed from `/tmp`.
+- `python3 -m py_compile updateFile.py scripts/check-baseline.py`,
+  `PYTHONDONTWRITEBYTECODE=1 python3 updateFile.py --help`, and
+  `git diff --check` passed.
+- Ten isolated hostile mutations were rejected for destination-local staging,
+  staged-file fsync, atomic replacement, prior-output preservation, backup
+  ordering, permission preservation, published-path privileged copy,
+  directory sync, guidance, and plan status; hostile mutations were rejected
+  without weakening the checker.
+- The exact intended-path, generated-artifact/data, workflow/dependency drift,
+  conflict-marker, whitespace, and changed-line audits passed. The changed-line credential scan passed.
+- No live provider download, privileged hosts replacement, or DNS flush was executed.
+- Handled failures before replacement preserve the prior output. Process
+  termination, power loss, kernel/filesystem failure, and failures after the
+  atomic replacement remain outside the verified guarantee.

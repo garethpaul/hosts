@@ -1,5 +1,9 @@
 # Changes
 
+## 2026-06-16
+
+- Generated hosts outputs preserve the last good file until atomic publication.
+
 ## 2026-06-15
 
 - Alternate --output generation removes or backs up only the selected hosts file and leaves the repository-root hosts data unchanged.

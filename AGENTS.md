@@ -43,6 +43,8 @@ source lists.
 
 ## Safety and gotchas
 
+Generated hosts outputs preserve the last good file until atomic publication.
+
 - No required secret or credential file was identified in the repository scan. If you add integrations later, keep secrets out of git.
 - Treat false positives as security and reliability issues: an overbroad entry can block account recovery, updates, payments, or other important services.
 - Source URLs require HTTP(S) schemes and hosts before the updater fetches them.

@@ -34,6 +34,7 @@ LOCATION_INDEPENDENT_MAKE_PLAN = ROOT / "docs/plans/2026-06-13-location-independ
 CREDENTIAL_SAFE_REFRESH_LOGGING_PLAN = ROOT / "docs/plans/2026-06-14-credential-safe-refresh-logging.md"
 NETWORK_ERROR_REDACTION_PLAN = ROOT / "docs/plans/2026-06-15-network-error-redaction.md"
 OUTPUT_TARGET_PLAN = ROOT / "docs/plans/2026-06-15-output-target-preservation.md"
+ATOMIC_OUTPUT_PLAN = ROOT / "docs/plans/2026-06-16-atomic-output-publication.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -160,7 +161,7 @@ def check_output_subfolder_validation(failures):
                 failures)
 
 
-def check_output_target_cleanup(failures):
+def check_atomic_output_publication(failures):
     namespace = {
         "__file__": str(ROOT / "updateFile.py"),
         "__name__": "hosts_updatefile_baseline",
@@ -172,7 +173,9 @@ def check_output_target_cleanup(failures):
         failures.append(f"updateFile.py helpers must load without side effects: {error}")
         return
 
-    cleanup = namespace["remove_old_hosts_file"]
+    create_staged = namespace["create_staged_hosts_file"]
+    discard_staged = namespace["discard_staged_hosts_file"]
+    publish = namespace["publish_hosts_file"]
     with tempfile.TemporaryDirectory() as temporary_root:
         repository = Path(temporary_root) / "repository"
         alternate = repository / "generated"
@@ -181,52 +184,94 @@ def check_output_target_cleanup(failures):
         alternate_hosts = alternate / "hosts"
         root_hosts.write_text("root hosts\n", encoding="utf-8")
         alternate_hosts.write_text("alternate hosts\n", encoding="utf-8")
+        alternate_hosts.chmod(0o640)
 
-        cleanup(False, str(alternate_hosts))
+        staged = create_staged(str(alternate))
+        staged.write(b"new alternate hosts\n")
+        staged_path = Path(staged.name)
+        published = publish(staged, str(alternate_hosts), False)
+        require(published == str(alternate_hosts),
+                "publication must return the selected hosts path",
+                failures)
         require(root_hosts.read_text(encoding="utf-8") == "root hosts\n",
-                "alternate output cleanup must preserve repository-root hosts data",
+                "alternate output publication must preserve repository-root hosts data",
                 failures)
-        require(not alternate_hosts.exists(),
-                "alternate output cleanup must remove only the selected hosts file",
+        require(alternate_hosts.read_text(encoding="utf-8") ==
+                "new alternate hosts\n" and not staged_path.exists(),
+                "completed alternate output must atomically replace its staged file",
+                failures)
+        require(alternate_hosts.stat().st_mode & 0o777 == 0o640,
+                "atomic publication must preserve existing destination permissions",
                 failures)
 
-        alternate_hosts.write_text("alternate backup\n", encoding="utf-8")
-        cleanup(True, str(alternate_hosts))
+        staged = create_staged(str(alternate))
+        staged.write(b"replacement with backup\n")
+        publish(staged, str(alternate_hosts), True)
         backups = list(alternate.glob("hosts-*"))
         require(len(backups) == 1 and
-                backups[0].read_text(encoding="utf-8") == "alternate backup\n",
-                "alternate output backup must remain beside the selected hosts file",
+                backups[0].read_text(encoding="utf-8") ==
+                "new alternate hosts\n",
+                "backup publication must preserve the prior selected output beside it",
                 failures)
         require(not list(repository.glob("hosts-*")),
                 "alternate output backup must not create a repository-root backup",
                 failures)
 
-        cleanup(False, str(root_hosts))
-        require(not root_hosts.exists(),
-                "default output cleanup must still remove repository-root hosts",
-                failures)
-        root_hosts.write_text("root backup\n", encoding="utf-8")
-        cleanup(True, str(root_hosts))
-        root_backups = list(repository.glob("hosts-*"))
-        require(len(root_backups) == 1 and
-                root_backups[0].read_text(encoding="utf-8") == "root backup\n",
-                "default output backup must remain beside repository-root hosts",
+        first_output = repository / "new-output" / "hosts"
+        staged = create_staged(str(first_output.parent))
+        staged.write(b"first hosts\n")
+        publish(staged, str(first_output), False)
+        require(first_output.read_text(encoding="utf-8") == "first hosts\n" and
+                first_output.stat().st_mode & 0o777 == 0o644,
+                "first publication must create a complete hosts file with default mode",
                 failures)
 
-        missing_hosts = repository / "new-output" / "hosts"
-        cleanup(False, str(missing_hosts))
-        require(not missing_hosts.parent.exists(),
-                "missing selected output must not require placeholder creation",
+        staged = create_staged(str(alternate))
+        staged.write(b"partial hosts\n")
+        staged_path = Path(staged.name)
+        discard_staged(staged)
+        require(not staged_path.exists() and
+                alternate_hosts.read_text(encoding="utf-8") ==
+                "replacement with backup\n",
+                "generation failure cleanup must remove only the staged file",
                 failures)
 
-        external_hosts = Path(temporary_root) / "external-hosts"
-        external_hosts.write_text("external hosts\n", encoding="utf-8")
-        selected_link = alternate / "hosts-link"
-        selected_link.symlink_to(external_hosts)
-        cleanup(False, str(selected_link))
-        require(not selected_link.exists() and
-                external_hosts.read_text(encoding="utf-8") == "external hosts\n",
-                "selected hosts symlink cleanup must unlink without changing its target",
+        staged = create_staged(str(alternate))
+        staged.write(b"failed replacement\n")
+        staged_path = Path(staged.name)
+        original_replace = namespace["os"].replace
+
+        def fail_replace(source, destination):
+            raise OSError("replacement failed")
+
+        try:
+            namespace["os"].replace = fail_replace
+            try:
+                publish(staged, str(alternate_hosts), True)
+            except OSError:
+                pass
+            else:
+                failures.append("replacement failure must propagate")
+        finally:
+            namespace["os"].replace = original_replace
+        require(not staged_path.exists() and
+                alternate_hosts.read_text(encoding="utf-8") ==
+                "replacement with backup\n",
+                "replacement failure must preserve the prior selected output",
+                failures)
+        require(any(path.read_text(encoding="utf-8") ==
+                    "replacement with backup\n"
+                    for path in alternate.glob("hosts-*")),
+                "replacement failure must retain a requested recovery backup",
+                failures)
+
+        moved_paths = []
+        namespace["move_hosts_file_into_place"] = moved_paths.append
+        namespace["prompt_for_move"](
+            str(alternate_hosts), auto=False, replace=True,
+            skipstatichosts=False)
+        require(moved_paths == [str(alternate_hosts)],
+                "privileged replacement must receive the published selected path",
                 failures)
 
 
@@ -809,10 +854,10 @@ def main():
         node for node in checker_tree.body
         if isinstance(node, ast.FunctionDef) and node.name == "main"
     )
-    output_target_check = next(
+    atomic_output_check = next(
         node for node in checker_tree.body
         if isinstance(node, ast.FunctionDef)
-        and node.name == "check_output_target_cleanup"
+        and node.name == "check_atomic_output_publication"
     )
     require(any(
         isinstance(node, ast.Call)
@@ -829,25 +874,25 @@ def main():
     require(any(
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
-        and node.func.id == "check_output_target_cleanup"
+        and node.func.id == "check_atomic_output_publication"
         for node in ast.walk(main_function)
-    ), "baseline main must execute selected output cleanup coverage", failures)
+    ), "baseline main must execute atomic output publication coverage", failures)
     require(any(
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and isinstance(node.func.value, ast.Name)
         and node.func.value.id == "root_hosts"
         and node.func.attr == "read_text"
-        for node in ast.walk(output_target_check)
-    ), "selected output coverage must assert repository-root hosts preservation", failures)
+        for node in ast.walk(atomic_output_check)
+    ), "atomic output coverage must assert repository-root hosts preservation", failures)
     require(any(
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and isinstance(node.func.value, ast.Name)
         and node.func.value.id == "alternate"
         and node.func.attr == "glob"
-        for node in ast.walk(output_target_check)
-    ), "selected output coverage must assert alternate backup placement", failures)
+        for node in ast.walk(atomic_output_check)
+    ), "atomic output coverage must assert alternate backup placement", failures)
     required_files = [
         ".github/CODEOWNERS",
         ".gitignore",
@@ -885,6 +930,7 @@ def main():
         "docs/plans/2026-06-14-credential-safe-refresh-logging.md",
         "docs/plans/2026-06-15-network-error-redaction.md",
         "docs/plans/2026-06-15-output-target-preservation.md",
+        "docs/plans/2026-06-16-atomic-output-publication.md",
     ]
 
     for relative_path in required_files:
@@ -895,7 +941,7 @@ def main():
     check_exclusion_regex_escaping(failures)
     check_exclusion_domain_validation(failures)
     check_output_subfolder_validation(failures)
-    check_output_target_cleanup(failures)
+    check_atomic_output_publication(failures)
     check_source_hostname_validation(failures)
     check_target_ip_validation(failures)
     check_source_fetch_closes_response(failures)
@@ -957,11 +1003,32 @@ def main():
             "updateFile.py must reject unsafe output subfolders before writing generated hosts files",
             failures)
     require('settings["outputpath"], settings["hostfilename"]' in updater and
-            'remove_old_hosts_file(settings["backup"], selected_hosts_file)' in updater and
-            "def remove_old_hosts_file(backup, old_file_path):" in updater and
-            "os.path.dirname(old_file_path)" in updater and
-            "os.path.basename(old_file_path)" in updater,
-            "updateFile.py must clean up and back up only the selected output hosts file",
+            'create_staged_hosts_file(settings["outputpath"])' in updater and
+            'publish_hosts_file(' in updater and
+            'final_file, selected_hosts_file, settings["backup"]' in updater and
+            'prompt_for_move(published_hosts_file' in updater and
+            "os.replace(temporary_path, destination)" in updater and
+            "remove_old_hosts_file" not in updater,
+            "updateFile.py must stage and atomically publish only the selected output hosts file",
+            failures)
+    publish_start = updater.find("def publish_hosts_file(")
+    publish_end = updater.find("# End File Logic", publish_start)
+    publish_source = updater[publish_start:publish_end]
+    require(publish_start >= 0 and
+            'prefix=".hosts-output-"' in updater and
+            "delete=False" in updater and
+            "staged_file.flush()" in publish_source and
+            "os.chmod(temporary_path, destination_mode)" in publish_source and
+            "os.fsync(staged_file.fileno())" in publish_source and
+            "os.replace(temporary_path, destination)" in publish_source and
+            "directory_fd = os.open(destination_directory, os.O_RDONLY)" in publish_source and
+            "os.fsync(directory_fd)" in publish_source and
+            "discard_staged_hosts_file(staged_file)" in publish_source,
+            "hosts publication must durably stage, replace, sync, and clean its selected output",
+            failures)
+    require(publish_source.find("shutil.copy(destination, backup_file_path)") <
+            publish_source.find("os.replace(temporary_path, destination)"),
+            "hosts backup must capture the prior selected output before replacement",
             failures)
     require("is_valid_source_hostname(hostname)" in updater and "hostname_format_regex" in updater,
             "updateFile.py must reject malformed upstream hostnames before output",
@@ -977,6 +1044,7 @@ def main():
             "updateFile.py must not use shell=True for privileged commands",
             failures)
 
+    agents = read("AGENTS.md")
     readme = read("README.md")
     vision = read("VISION.md")
     security = read("SECURITY.md")
@@ -1007,6 +1075,7 @@ def main():
     credential_safe_refresh_logging_plan = CREDENTIAL_SAFE_REFRESH_LOGGING_PLAN.read_text(encoding="utf-8") if CREDENTIAL_SAFE_REFRESH_LOGGING_PLAN.exists() else ""
     network_error_redaction_plan = NETWORK_ERROR_REDACTION_PLAN.read_text(encoding="utf-8") if NETWORK_ERROR_REDACTION_PLAN.exists() else ""
     output_target_plan = OUTPUT_TARGET_PLAN.read_text(encoding="utf-8") if OUTPUT_TARGET_PLAN.exists() else ""
+    atomic_output_plan = ATOMIC_OUTPUT_PLAN.read_text(encoding="utf-8") if ATOMIC_OUTPUT_PLAN.exists() else ""
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
             failures)
@@ -1335,6 +1404,43 @@ jobs:
                           output_target_verification,
                           re.IGNORECASE) is None,
             "selected output preservation plan must record completed verification",
+            failures)
+    atomic_output_guidance = (
+        "Generated hosts outputs preserve the last good file until atomic publication."
+    )
+    for document_name, document in (
+            ("AGENTS.md", agents),
+            ("README.md", readme),
+            ("SECURITY.md", security),
+            ("VISION.md", vision),
+            ("CHANGES.md", changes)):
+        require(atomic_output_guidance in document,
+                f"{document_name} must document atomic hosts output publication",
+                failures)
+    atomic_output_statuses = re.findall(
+        r"^Status: .+$", atomic_output_plan, flags=re.MULTILINE
+    )
+    atomic_output_sections = atomic_output_plan.split(
+        "## Verification Completed\n", 1
+    )
+    atomic_output_verification = (
+        atomic_output_sections[1] if len(atomic_output_sections) == 2 else ""
+    )
+    atomic_output_required = (
+        "All four Make gates passed",
+        "absolute Makefile passed from `/tmp`",
+        "python3 -m py_compile updateFile.py scripts/check-baseline.py",
+        "hostile mutations were rejected",
+        "changed-line credential scan passed",
+        "No live provider download, privileged hosts replacement, or DNS flush was executed",
+    )
+    require(atomic_output_statuses == ["Status: Completed"]
+            and all(item in atomic_output_verification
+                    for item in atomic_output_required)
+            and re.search(r"\b(?:pending|todo|tbd)\b",
+                          atomic_output_verification,
+                          re.IGNORECASE) is None,
+            "atomic output publication plan must record completed verification",
             failures)
 
     if failures:

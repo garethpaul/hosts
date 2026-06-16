@@ -105,6 +105,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
 
 ## Security and Privacy Notes
 
+Generated hosts outputs preserve the last good file until atomic publication.
+
 - Review changes touching authentication or token handling; examples from the scan include updateFile.py.
 - Review changes touching network requests, sockets, or service endpoints; examples from the scan include readmeData.json, updateFile.py.
 - Review changes touching file, media, JSON, XML, CSV, OCR, or data parsing; examples from the scan include updateFile.py.

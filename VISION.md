@@ -53,6 +53,8 @@ Contribution rules:
 
 ## Security And Reliability
 
+Generated hosts outputs preserve the last good file until atomic publication.
+
 Canonical security policy and reporting:
 
 - [`SECURITY.md`](SECURITY.md)

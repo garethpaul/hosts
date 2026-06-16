@@ -178,18 +178,26 @@ def main():
     merge_file = create_initial_file()
     selected_hosts_file = path_join_robust(
         settings["outputpath"], settings["hostfilename"])
-    remove_old_hosts_file(settings["backup"], selected_hosts_file)
-    final_file = remove_dups_and_excl(merge_file, exclusion_regexes)
+    final_file = create_staged_hosts_file(settings["outputpath"])
+    try:
+        final_file = remove_dups_and_excl(
+            merge_file, exclusion_regexes, final_file)
 
-    number_of_rules = settings["numberofrules"]
-    output_subfolder = settings["outputsubfolder"]
-    skip_static_hosts = settings["skipstatichosts"]
+        number_of_rules = settings["numberofrules"]
+        output_subfolder = settings["outputsubfolder"]
+        skip_static_hosts = settings["skipstatichosts"]
 
-    write_opening_header(final_file, extensions=extensions,
-                         numberofrules=number_of_rules,
-                         outputsubfolder=output_subfolder,
-                         skipstatichosts=skip_static_hosts)
-    final_file.close()
+        write_opening_header(final_file, extensions=extensions,
+                             numberofrules=number_of_rules,
+                             outputsubfolder=output_subfolder,
+                             skipstatichosts=skip_static_hosts)
+        published_hosts_file = publish_hosts_file(
+            final_file, selected_hosts_file, settings["backup"])
+    except Exception:
+        if not merge_file.closed:
+            merge_file.close()
+        discard_staged_hosts_file(final_file)
+        raise
 
     update_readme_data(settings["readmedatafilename"],
                        extensions=extensions,
@@ -202,7 +210,7 @@ def main():
                   "{:,}".format(number_of_rules) +
                   " unique entries.")
 
-    move_file = prompt_for_move(final_file, auto=auto,
+    move_file = prompt_for_move(published_hosts_file, auto=auto,
                                 replace=settings["replace"],
                                 skipstatichosts=skip_static_hosts)
 
@@ -311,15 +319,15 @@ def prompt_for_flush_dns_cache(flush_cache, prompt_flush):
             flush_dns_cache()
 
 
-def prompt_for_move(final_file, **move_params):
+def prompt_for_move(hosts_file_path, **move_params):
     """
     Prompt the user to move the newly created hosts file to its designated
     location in the OS.
 
     Parameters
     ----------
-    final_file : file
-        The file object that contains the newly created hosts data.
+    hosts_file_path : str
+        The published file that contains the newly created hosts data.
     move_params : kwargs
         Dictionary providing additional parameters for moving the hosts file
         into place. Currently, those fields are:
@@ -346,7 +354,7 @@ def prompt_for_move(final_file, **move_params):
         move_file = query_yes_no(prompt)
 
     if move_file:
-        move_hosts_file_into_place(final_file)
+        move_hosts_file_into_place(hosts_file_path)
 
     return move_file
 # End Prompt the User
@@ -371,7 +379,6 @@ def display_exclusion_options(common_exclusions, exclusion_pattern,
         The exclusion pattern with which to create the domain regex.
     exclusion_regexes : list
         The list of regex patterns used to exclude domains.
-
     Returns
     -------
     aug_exclusion_regexes : list
@@ -607,7 +614,17 @@ def create_initial_file():
     return merge_file
 
 
-def remove_dups_and_excl(merge_file, exclusion_regexes):
+def create_staged_hosts_file(output_path):
+    """Create an owned temporary hosts file beside the selected output."""
+
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+    return tempfile.NamedTemporaryFile(
+        mode="w+b" if PY3 else "w+", dir=output_path,
+        prefix=".hosts-output-", delete=False)
+
+
+def remove_dups_and_excl(merge_file, exclusion_regexes, final_file):
     """
     Remove duplicates and remove hosts that we are excluding.
 
@@ -620,6 +637,8 @@ def remove_dups_and_excl(merge_file, exclusion_regexes):
         The file object that contains the hostnames that we are pruning.
     exclusion_regexes : list
         The list of regex patterns used to exclude domains.
+    final_file : file
+        The staged output file that receives normalized hosts data.
     """
 
     number_of_rules = settings["numberofrules"]
@@ -629,13 +648,6 @@ def remove_dups_and_excl(merge_file, exclusion_regexes):
                 line = line.strip(" \t\n\r")
                 if line and not line.startswith("#"):
                     settings["exclusions"].append(line)
-
-    if not os.path.exists(settings["outputpath"]):
-        os.makedirs(settings["outputpath"])
-
-    # Another mode is required to read and write the file in Python 3
-    final_file = open(path_join_robust(settings["outputpath"], "hosts"),
-                      "w+b" if PY3 else "w+")
 
     merge_file.seek(0)  # reset file pointer
     hostnames = {"localhost", "localhost.localdomain",
@@ -924,7 +936,7 @@ def update_readme_data(readme_file, **readme_updates):
     write_json_file_atomically(readme_file, readme_data)
 
 
-def move_hosts_file_into_place(final_file):
+def move_hosts_file_into_place(hosts_file_path):
     r"""
     Move the newly-created hosts file into its correct location on the OS.
 
@@ -937,11 +949,11 @@ def move_hosts_file_into_place(final_file):
 
     Parameters
     ----------
-    final_file : file object
-        The newly-created hosts file to move.
+    hosts_file_path : str
+        The published hosts file to move.
     """
 
-    filename = os.path.abspath(final_file.name)
+    filename = os.path.abspath(hosts_file_path)
 
     if os.name == "posix":
         print("Moving the file requires administrative privileges. "
@@ -1025,34 +1037,57 @@ def flush_dns_cache():
             print_failure("Unable to determine DNS management tool.")
 
 
-def remove_old_hosts_file(backup, old_file_path):
-    """
-    Remove the old hosts file.
+def discard_staged_hosts_file(staged_file):
+    """Close and remove an unpublished temporary hosts file."""
 
-    This is a hotfix because merging with an already existing hosts file leads
-    to artifacts and duplicates.
+    temporary_path = staged_file.name
+    if not staged_file.closed:
+        staged_file.close()
+    if os.path.exists(temporary_path):
+        try:
+            os.remove(temporary_path)
+        except OSError:
+            pass
 
-    Parameters
-    ----------
-    backup : boolean, default False
-        Whether or not to backup the existing hosts file.
-    old_file_path : str
-        The selected hosts output file to remove before regeneration.
-    """
 
-    if not os.path.lexists(old_file_path):
-        return
+def publish_hosts_file(staged_file, destination, backup):
+    """Durably replace the selected output with a completed staged file."""
 
-    if backup:
-        backup_file_path = path_join_robust(
-            os.path.dirname(old_file_path),
-            "{}-{}".format(os.path.basename(old_file_path),
-                           time.strftime("%Y-%m-%d-%H-%M-%S")))
+    destination_directory = os.path.dirname(destination) or "."
+    destination_mode = 0o644
+    if os.path.exists(destination):
+        destination_mode = os.stat(destination).st_mode & 0o777
 
-        # Make a backup copy, marking the date in which the list was updated
-        shutil.copy(old_file_path, backup_file_path)
+    temporary_path = staged_file.name
+    try:
+        staged_file.flush()
+        os.chmod(temporary_path, destination_mode)
+        os.fsync(staged_file.fileno())
+        staged_file.close()
 
-    os.remove(old_file_path)
+        if backup and os.path.lexists(destination):
+            backup_file_path = path_join_robust(
+                destination_directory,
+                "{}-{}".format(os.path.basename(destination),
+                               time.strftime("%Y-%m-%d-%H-%M-%S")))
+            shutil.copy(destination, backup_file_path)
+
+        os.replace(temporary_path, destination)
+        temporary_path = None
+
+        try:
+            directory_fd = os.open(destination_directory, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except OSError:
+            pass
+
+        return destination
+    finally:
+        if temporary_path is not None:
+            discard_staged_hosts_file(staged_file)
 # End File Logic
 
 
