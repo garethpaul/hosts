@@ -2,7 +2,7 @@
 title: "fix: Preserve every generated hosts backup"
 type: fix
 date: 2026-06-17
-status: planned
+status: completed
 ---
 
 # fix: Preserve every generated hosts backup
@@ -25,8 +25,9 @@ the recovery history precisely when an operator is making rapid changes.
   selected output directory.
 - R2. Backup names must retain the destination basename and readable timestamp
   while adding collision-safe uniqueness.
-- R3. A failed copy must remove only its empty allocated backup artifact and
-  leave the existing destination and staged publication intact.
+- R3. A failed copy must remove only its empty allocated backup artifact,
+  preserve the existing destination, and safely discard the unpublished staged
+  file.
 - R4. Destination mode preservation, staged-file durability, atomic
   `os.replace`, directory sync, output containment, and target preservation
   must remain unchanged.
@@ -56,3 +57,29 @@ the recovery history precisely when an operator is making rapid changes.
 
 This change does not alter source fetching, generated hosts contents,
 privileged `/etc/hosts` replacement, DNS flushing, or backup retention policy.
+
+## Work Completed
+
+- Added exclusive, timestamp-prefixed backup allocation in the selected output
+  directory and cleanup of the allocated path when copying fails.
+- Kept backup creation before durable atomic destination replacement and
+  preserved destination permissions, staged-file cleanup, and directory sync.
+- Extended portable runtime coverage and operator guidance for collision-safe
+  backups without executing live downloads or privileged system changes.
+
+## Verification Completed
+
+- All four Make gates passed: `make lint`, `make test`, `make build`, and
+  `make check`.
+- The external-directory absolute Makefile check passed from `/tmp`.
+- `python3 -m py_compile updateFile.py scripts/check-baseline.py`,
+  `python3 updateFile.py --help`, and `git diff --check` passed.
+- Two publications under one fixed timestamp produced distinct backups that
+  retained their respective prior destination contents.
+- Simulated backup-copy failure preserved the destination and existing backups
+  while removing only the allocated empty backup and unpublished staged file.
+- Six isolated hostile mutations were rejected for exclusive allocation,
+  timestamp-prefix preservation, copy-failure cleanup, documentation, plan
+  status, and plan evidence.
+- No live provider download, privileged hosts replacement, or DNS flush was
+  executed.

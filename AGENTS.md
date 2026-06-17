@@ -44,6 +44,7 @@ source lists.
 ## Safety and gotchas
 
 Generated hosts outputs preserve the last good file until atomic publication.
+Backup allocation is exclusive, so same-second publications preserve distinct recovery copies.
 
 - No required secret or credential file was identified in the repository scan. If you add integrations later, keep secrets out of git.
 - Treat false positives as security and reliability issues: an overbroad entry can block account recovery, updates, payments, or other important services.

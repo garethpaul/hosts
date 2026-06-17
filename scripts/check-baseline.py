@@ -35,6 +35,7 @@ CREDENTIAL_SAFE_REFRESH_LOGGING_PLAN = ROOT / "docs/plans/2026-06-14-credential-
 NETWORK_ERROR_REDACTION_PLAN = ROOT / "docs/plans/2026-06-15-network-error-redaction.md"
 OUTPUT_TARGET_PLAN = ROOT / "docs/plans/2026-06-15-output-target-preservation.md"
 ATOMIC_OUTPUT_PLAN = ROOT / "docs/plans/2026-06-16-atomic-output-publication.md"
+UNIQUE_BACKUP_PLAN = ROOT / "docs/plans/2026-06-17-unique-hosts-backups.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -217,6 +218,53 @@ def check_atomic_output_publication(failures):
                 "alternate output backup must not create a repository-root backup",
                 failures)
 
+        original_strftime = namespace["time"].strftime
+        namespace["time"].strftime = lambda pattern: "2026-06-17-15-20-00"
+        try:
+            staged = create_staged(str(alternate))
+            staged.write(b"same-second first publication\n")
+            publish(staged, str(alternate_hosts), True)
+            staged = create_staged(str(alternate))
+            staged.write(b"same-second second publication\n")
+            publish(staged, str(alternate_hosts), True)
+        finally:
+            namespace["time"].strftime = original_strftime
+        same_second_backups = list(alternate.glob("hosts-2026-06-17-15-20-00-*"))
+        require(len(same_second_backups) == 2 and
+                {path.read_text(encoding="utf-8")
+                 for path in same_second_backups} == {
+                    "replacement with backup\n",
+                    "same-second first publication\n",
+                },
+                "same-second publications must preserve distinct ordered recovery copies",
+                failures)
+
+        staged = create_staged(str(alternate))
+        staged.write(b"backup copy failure\n")
+        staged_path = Path(staged.name)
+        backups_before_failure = set(alternate.glob("hosts-*"))
+        original_copy = namespace["shutil"].copy
+
+        def fail_backup_copy(source, destination):
+            raise IOError("simulated backup copy failure")
+
+        try:
+            namespace["shutil"].copy = fail_backup_copy
+            try:
+                publish(staged, str(alternate_hosts), True)
+            except IOError:
+                pass
+            else:
+                failures.append("backup copy failure must propagate")
+        finally:
+            namespace["shutil"].copy = original_copy
+        require(set(alternate.glob("hosts-*")) == backups_before_failure and
+                not staged_path.exists() and
+                alternate_hosts.read_text(encoding="utf-8") ==
+                "same-second second publication\n",
+                "backup copy failure must remove only its allocated artifact and staged file",
+                failures)
+
         first_output = repository / "new-output" / "hosts"
         staged = create_staged(str(first_output.parent))
         staged.write(b"first hosts\n")
@@ -232,7 +280,7 @@ def check_atomic_output_publication(failures):
         discard_staged(staged)
         require(not staged_path.exists() and
                 alternate_hosts.read_text(encoding="utf-8") ==
-                "replacement with backup\n",
+                "same-second second publication\n",
                 "generation failure cleanup must remove only the staged file",
                 failures)
 
@@ -256,11 +304,11 @@ def check_atomic_output_publication(failures):
             namespace["os"].replace = original_replace
         require(not staged_path.exists() and
                 alternate_hosts.read_text(encoding="utf-8") ==
-                "replacement with backup\n",
+                "same-second second publication\n",
                 "replacement failure must preserve the prior selected output",
                 failures)
         require(any(path.read_text(encoding="utf-8") ==
-                    "replacement with backup\n"
+                    "same-second second publication\n"
                     for path in alternate.glob("hosts-*")),
                 "replacement failure must retain a requested recovery backup",
                 failures)
@@ -931,6 +979,7 @@ def main():
         "docs/plans/2026-06-15-network-error-redaction.md",
         "docs/plans/2026-06-15-output-target-preservation.md",
         "docs/plans/2026-06-16-atomic-output-publication.md",
+        "docs/plans/2026-06-17-unique-hosts-backups.md",
     ]
 
     for relative_path in required_files:
@@ -1012,7 +1061,9 @@ def main():
             "updateFile.py must stage and atomically publish only the selected output hosts file",
             failures)
     publish_start = updater.find("def publish_hosts_file(")
+    backup_start = updater.find("def create_hosts_backup(")
     publish_end = updater.find("# End File Logic", publish_start)
+    backup_source = updater[backup_start:publish_start]
     publish_source = updater[publish_start:publish_end]
     require(publish_start >= 0 and
             'prefix=".hosts-output-"' in updater and
@@ -1026,9 +1077,17 @@ def main():
             "discard_staged_hosts_file(staged_file)" in publish_source,
             "hosts publication must durably stage, replace, sync, and clean its selected output",
             failures)
-    require(publish_source.find("shutil.copy(destination, backup_file_path)") <
+    require(backup_start >= 0 and
+            "tempfile.mkstemp(" in backup_source and
+            "time.strftime(\"%Y-%m-%d-%H-%M-%S\")" in backup_source and
+            "prefix=backup_prefix" in backup_source and
+            "os.close(descriptor)" in backup_source and
+            "shutil.copy(destination, backup_file_path)" in backup_source and
+            "os.remove(backup_file_path)" in backup_source and
+            "create_hosts_backup(destination)" in publish_source and
+            publish_source.find("create_hosts_backup(destination)") <
             publish_source.find("os.replace(temporary_path, destination)"),
-            "hosts backup must capture the prior selected output before replacement",
+            "hosts backups must be exclusively allocated, cleaned on copy failure, and completed before replacement",
             failures)
     require("is_valid_source_hostname(hostname)" in updater and "hostname_format_regex" in updater,
             "updateFile.py must reject malformed upstream hostnames before output",
@@ -1076,6 +1135,7 @@ def main():
     network_error_redaction_plan = NETWORK_ERROR_REDACTION_PLAN.read_text(encoding="utf-8") if NETWORK_ERROR_REDACTION_PLAN.exists() else ""
     output_target_plan = OUTPUT_TARGET_PLAN.read_text(encoding="utf-8") if OUTPUT_TARGET_PLAN.exists() else ""
     atomic_output_plan = ATOMIC_OUTPUT_PLAN.read_text(encoding="utf-8") if ATOMIC_OUTPUT_PLAN.exists() else ""
+    unique_backup_plan = UNIQUE_BACKUP_PLAN.read_text(encoding="utf-8") if UNIQUE_BACKUP_PLAN.exists() else ""
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
             failures)
@@ -1237,6 +1297,11 @@ jobs:
             "`readmeData.json` atomically" in vision and
             "`readmeData.json` writes atomic" in changes,
             "Docs must record atomic README metadata replacement",
+            failures)
+    unique_backup_guidance = "Backup allocation is exclusive, so same-second publications preserve distinct recovery copies."
+    require(all(unique_backup_guidance in document for document in
+                [agents, readme, security, vision, changes]),
+            "Docs must record collision-safe hosts backup allocation",
             failures)
     atomic_refresh_statuses = re.findall(
         r"^status: .+$", atomic_refresh_plan, flags=re.MULTILINE
@@ -1441,6 +1506,34 @@ jobs:
                           atomic_output_verification,
                           re.IGNORECASE) is None,
             "atomic output publication plan must record completed verification",
+            failures)
+    unique_backup_statuses = re.findall(
+        r"^status: .+$", unique_backup_plan, flags=re.MULTILINE
+    )
+    unique_backup_sections = unique_backup_plan.split(
+        "## Verification Completed\n", 1
+    )
+    unique_backup_verification = (
+        unique_backup_sections[1] if len(unique_backup_sections) == 2 else ""
+    )
+    unique_backup_required = (
+        "All four Make gates passed",
+        "external-directory absolute Makefile check passed from `/tmp`",
+        "python3 -m py_compile updateFile.py scripts/check-baseline.py",
+        "python3 updateFile.py --help",
+        "Two publications under one fixed timestamp produced distinct backups",
+        "Simulated backup-copy failure preserved the destination",
+        "Six isolated hostile mutations were rejected",
+        "git diff --check",
+        "No live provider download, privileged hosts replacement, or DNS flush was",
+    )
+    require(unique_backup_statuses == ["status: completed"] and
+            all(item in unique_backup_verification
+                    for item in unique_backup_required) and
+            re.search(r"\b(?:pending|todo|tbd|not run)\b",
+                      unique_backup_verification,
+                      re.IGNORECASE) is None,
+            "unique hosts backup plan must record completed verification",
             failures)
 
     if failures:

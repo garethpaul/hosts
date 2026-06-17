@@ -54,6 +54,7 @@ Contribution rules:
 ## Security And Reliability
 
 Generated hosts outputs preserve the last good file until atomic publication.
+Backup allocation is exclusive, so same-second publications preserve distinct recovery copies.
 
 Canonical security policy and reporting:
 

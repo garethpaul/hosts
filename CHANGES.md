@@ -1,5 +1,9 @@
 # Changes
 
+## 2026-06-17
+
+- Backup allocation is exclusive, so same-second publications preserve distinct recovery copies.
+
 ## 2026-06-16
 
 - Generated hosts outputs preserve the last good file until atomic publication.

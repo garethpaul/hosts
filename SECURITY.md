@@ -38,6 +38,7 @@ Generated hosts outputs preserve the last good file until atomic publication.
 - Reject malformed upstream DNS labels before they are normalized into the
   generated hosts file.
 - `updateFile.py` can fetch remote source lists and can replace the local hosts file through privileged `sudo` operations when replacement options are used. Treat changes to source URLs, source metadata, subprocess calls, backup behavior, and DNS flush logic as security-sensitive.
+- Backup allocation is exclusive, so same-second publications preserve distinct recovery copies.
 - Source URLs must use HTTPS so source payloads are authenticated in transit;
   informational home and issue links remain provenance metadata rather than
   updater fetch targets.

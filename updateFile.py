@@ -1050,6 +1050,26 @@ def discard_staged_hosts_file(staged_file):
             pass
 
 
+def create_hosts_backup(destination):
+    """Copy a destination into an exclusively allocated recovery file."""
+
+    destination_directory = os.path.dirname(destination) or "."
+    backup_prefix = "{}-{}-".format(
+        os.path.basename(destination), time.strftime("%Y-%m-%d-%H-%M-%S"))
+    descriptor, backup_file_path = tempfile.mkstemp(
+        dir=destination_directory, prefix=backup_prefix)
+    os.close(descriptor)
+    try:
+        shutil.copy(destination, backup_file_path)
+    except Exception:
+        try:
+            os.remove(backup_file_path)
+        except OSError:
+            pass
+        raise
+    return backup_file_path
+
+
 def publish_hosts_file(staged_file, destination, backup):
     """Durably replace the selected output with a completed staged file."""
 
@@ -1066,11 +1086,7 @@ def publish_hosts_file(staged_file, destination, backup):
         staged_file.close()
 
         if backup and os.path.lexists(destination):
-            backup_file_path = path_join_robust(
-                destination_directory,
-                "{}-{}".format(os.path.basename(destination),
-                               time.strftime("%Y-%m-%d-%H-%M-%S")))
-            shutil.copy(destination, backup_file_path)
+            create_hosts_backup(destination)
 
         os.replace(temporary_path, destination)
         temporary_path = None

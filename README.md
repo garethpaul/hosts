@@ -126,6 +126,7 @@ Generated hosts outputs preserve the last good file until atomic publication.
 - Output subfolders and symlink targets must stay inside the repository before
   generated hosts data is written.
 - `updateFile.py --replace` and DNS flush behavior can affect the local machine's `/etc/hosts`; review generated output and keep backups before privileged replacement.
+- Backup allocation is exclusive, so same-second publications preserve distinct recovery copies.
 
 ## Maintenance Notes
 
