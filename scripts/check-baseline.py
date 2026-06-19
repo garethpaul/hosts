@@ -186,6 +186,7 @@ def check_atomic_output_publication(failures):
         root_hosts.write_text("root hosts\n", encoding="utf-8")
         alternate_hosts.write_text("alternate hosts\n", encoding="utf-8")
         alternate_hosts.chmod(0o640)
+        namespace["BASEDIR_PATH"] = str(repository)
 
         staged = create_staged(str(alternate))
         staged.write(b"new alternate hosts\n")
@@ -243,13 +244,13 @@ def check_atomic_output_publication(failures):
         staged.write(b"backup copy failure\n")
         staged_path = Path(staged.name)
         backups_before_failure = set(alternate.glob("hosts-*"))
-        original_copy = namespace["shutil"].copy
+        original_copy = namespace["shutil"].copyfileobj
 
         def fail_backup_copy(source, destination):
             raise IOError("simulated backup copy failure")
 
         try:
-            namespace["shutil"].copy = fail_backup_copy
+            namespace["shutil"].copyfileobj = fail_backup_copy
             try:
                 publish(staged, str(alternate_hosts), True)
             except IOError:
@@ -257,7 +258,7 @@ def check_atomic_output_publication(failures):
             else:
                 failures.append("backup copy failure must propagate")
         finally:
-            namespace["shutil"].copy = original_copy
+            namespace["shutil"].copyfileobj = original_copy
         require(set(alternate.glob("hosts-*")) == backups_before_failure and
                 not staged_path.exists() and
                 alternate_hosts.read_text(encoding="utf-8") ==
@@ -762,8 +763,8 @@ def check_readme_data_update_is_atomic(failures):
             namespace["os"].fsync = original_fsync
             namespace["os"].replace = original_replace
 
-        require(write_events == ["fsync", "replace"],
-                "metadata updates must sync before atomic replacement",
+        require(write_events == ["fsync", "replace", "fsync"],
+                "metadata updates must sync file data and the replacement directory",
                 failures)
         updated_data = json.loads(metadata_path.read_text(encoding="utf-8"))
         require(updated_data["legacy"] == {"entries": 2},
@@ -1069,11 +1070,10 @@ def main():
             'prefix=".hosts-output-"' in updater and
             "delete=False" in updater and
             "staged_file.flush()" in publish_source and
-            "os.chmod(temporary_path, destination_mode)" in publish_source and
+            "apply_file_metadata(" in publish_source and
             "os.fsync(staged_file.fileno())" in publish_source and
             "os.replace(temporary_path, destination)" in publish_source and
-            "directory_fd = os.open(destination_directory, os.O_RDONLY)" in publish_source and
-            "os.fsync(directory_fd)" in publish_source and
+            "sync_directory(destination_directory)" in publish_source and
             "discard_staged_hosts_file(staged_file)" in publish_source,
             "hosts publication must durably stage, replace, sync, and clean its selected output",
             failures)
@@ -1081,8 +1081,10 @@ def main():
             "tempfile.mkstemp(" in backup_source and
             "time.strftime(\"%Y-%m-%d-%H-%M-%S\")" in backup_source and
             "prefix=backup_prefix" in backup_source and
-            "os.close(descriptor)" in backup_source and
-            "shutil.copy(destination, backup_file_path)" in backup_source and
+            "os.fdopen(descriptor, \"wb\")" in backup_source and
+            "shutil.copyfileobj(destination_file, backup_file)" in backup_source and
+            "os.fsync(backup_file.fileno())" in backup_source and
+            "sync_directory(destination_directory)" in backup_source and
             "os.remove(backup_file_path)" in backup_source and
             "create_hosts_backup(destination)" in publish_source and
             publish_source.find("create_hosts_backup(destination)") <

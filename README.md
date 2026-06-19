@@ -90,6 +90,13 @@ Source fetch exceptions are reported generically without URL, query, or
 exception details.
 Output subfolders are checked so updater writes cannot target paths outside the
 repository through absolute paths, parent traversal, or escaping symlinks.
+Publication rechecks containment at the write boundary, rejects symlinked
+destination files, preserves existing mode and ownership where supported, and
+syncs parent directories after atomic replacement. Backup bytes are copied
+through the exclusively allocated file descriptor rather than reopening a
+raceable path.
+Source lines containing multiple hostname aliases preserve each valid alias;
+deduplication and exclusions are applied to each hostname independently.
 The `--ip` target must be a valid IPv4 or IPv6 literal and is rejected before
 source discovery or output generation if it contains whitespace, a hostname,
 an out-of-range address, or injected lines.

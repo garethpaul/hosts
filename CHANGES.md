@@ -1,5 +1,13 @@
 # Changes
 
+## 2026-06-19
+
+- Preserved every valid hostname alias on multi-host source lines while
+  applying exclusions independently to avoid losing unrelated block entries.
+- Closed atomic-publication races by copying backups through their exclusively
+  allocated descriptors, rejecting symlink destinations, preserving ownership,
+  and syncing parent directories after replacement.
+
 ## 2026-06-17
 
 - Backup allocation is exclusive, so same-second publications preserve distinct recovery copies.

@@ -617,8 +617,10 @@ def create_initial_file():
 def create_staged_hosts_file(output_path):
     """Create an owned temporary hosts file beside the selected output."""
 
+    require_repository_path(output_path, "output directory")
     if not os.path.exists(output_path):
         os.makedirs(output_path)
+    require_repository_path(output_path, "output directory")
     return tempfile.NamedTemporaryFile(
         mode="w+b" if PY3 else "w+", dir=output_path,
         prefix=".hosts-output-", delete=False)
@@ -673,25 +675,23 @@ def remove_dups_and_excl(merge_file, exclusion_regexes, final_file):
         if "::1" in line:
             continue
 
-        stripped_rule = strip_rule(line)  # strip comments
-        if not stripped_rule or matches_exclusions(stripped_rule,
-                                                   exclusion_regexes):
-            continue
-
-        # Normalize rule
-        hostname, normalized_rule = normalize_rule(
-            stripped_rule, target_ip=settings["targetip"],
+        normalized_rules = normalize_rules(
+            line, target_ip=settings["targetip"],
             keep_domain_comments=settings["keepdomaincomments"])
 
-        for exclude in exclusions:
-            if re.search(r'[\s\.]' + re.escape(exclude) + r'\s', line):
-                write_line = False
-                break
+        for hostname, normalized_rule in normalized_rules:
+            write_line = not matches_exclusions(
+                normalized_rule, exclusion_regexes)
+            for exclude in exclusions:
+                if (hostname == exclude or
+                        hostname.endswith("." + exclude)):
+                    write_line = False
+                    break
 
-        if normalized_rule and (hostname not in hostnames) and write_line:
-            write_data(final_file, normalized_rule)
-            hostnames.add(hostname)
-            number_of_rules += 1
+            if hostname not in hostnames and write_line:
+                write_data(final_file, normalized_rule)
+                hostnames.add(hostname)
+                number_of_rules += 1
 
     settings["numberofrules"] = number_of_rules
     merge_file.close()
@@ -720,27 +720,36 @@ def normalize_rule(rule, target_ip, keep_domain_comments):
         and spacing reformatted.
     """
 
-    regex = r'^\s*(\d{1,3}\.){3}\d{1,3}\s+([\w\.-]+[a-zA-Z])(.*)'
-    result = re.search(regex, rule)
-
-    if result:
-        hostname, suffix = result.group(2, 3)
-
-        # Explicitly lowercase and trim the hostname.
-        hostname = hostname.lower().strip()
-        if not is_valid_source_hostname(hostname):
-            print("==>%s<==" % rule)
-            return None, None
-
-        rule = "%s %s" % (target_ip, hostname)
-
-        if suffix and keep_domain_comments:
-            rule += " #%s" % suffix
-
-        return hostname, rule + "\n"
-
-    print("==>%s<==" % rule)
+    normalized_rules = normalize_rules(
+        rule, target_ip, keep_domain_comments)
+    if normalized_rules:
+        return normalized_rules[0]
     return None, None
+
+
+def normalize_rules(rule, target_ip, keep_domain_comments):
+    """Normalize every valid hostname alias in one hosts-file rule."""
+
+    uncommented_rule, separator, comment = rule.partition("#")
+    fields = uncommented_rule.split()
+    if (len(fields) < 2 or
+            re.match(r'^(\d{1,3}\.){3}\d{1,3}$', fields[0]) is None):
+        print("==>%s<==" % rule)
+        return []
+
+    normalized_rules = []
+    for source_hostname in fields[1:]:
+        hostname = source_hostname.lower().strip().rstrip(".")
+        if not is_valid_source_hostname(hostname):
+            print("==>%s<==" % source_hostname)
+            continue
+
+        normalized_rule = "%s %s" % (target_ip, hostname)
+        if separator and comment and keep_domain_comments:
+            normalized_rule += " #" + comment
+        normalized_rules.append((hostname, normalized_rule + "\n"))
+
+    return normalized_rules
 
 
 def is_valid_source_hostname(hostname):
@@ -1054,14 +1063,26 @@ def create_hosts_backup(destination):
     """Copy a destination into an exclusively allocated recovery file."""
 
     destination_directory = os.path.dirname(destination) or "."
+    destination_mode, destination_uid, destination_gid = get_file_metadata(
+        destination, 0o644)
     backup_prefix = "{}-{}-".format(
         os.path.basename(destination), time.strftime("%Y-%m-%d-%H-%M-%S"))
     descriptor, backup_file_path = tempfile.mkstemp(
         dir=destination_directory, prefix=backup_prefix)
-    os.close(descriptor)
     try:
-        shutil.copy(destination, backup_file_path)
+        with os.fdopen(descriptor, "wb") as backup_file:
+            descriptor = None
+            with open(destination, "rb") as destination_file:
+                shutil.copyfileobj(destination_file, backup_file)
+            backup_file.flush()
+            apply_file_metadata(
+                backup_file.fileno(), backup_file_path, destination_mode,
+                destination_uid, destination_gid)
+            os.fsync(backup_file.fileno())
+        sync_directory(destination_directory)
     except Exception:
+        if descriptor is not None:
+            os.close(descriptor)
         try:
             os.remove(backup_file_path)
         except OSError:
@@ -1074,14 +1095,15 @@ def publish_hosts_file(staged_file, destination, backup):
     """Durably replace the selected output with a completed staged file."""
 
     destination_directory = os.path.dirname(destination) or "."
-    destination_mode = 0o644
-    if os.path.exists(destination):
-        destination_mode = os.stat(destination).st_mode & 0o777
-
     temporary_path = staged_file.name
     try:
+        require_repository_path(destination_directory, "output directory")
+        destination_mode, destination_uid, destination_gid = get_file_metadata(
+            destination, 0o644)
         staged_file.flush()
-        os.chmod(temporary_path, destination_mode)
+        apply_file_metadata(
+            staged_file.fileno(), temporary_path, destination_mode,
+            destination_uid, destination_gid)
         os.fsync(staged_file.fileno())
         staged_file.close()
 
@@ -1090,15 +1112,7 @@ def publish_hosts_file(staged_file, destination, backup):
 
         os.replace(temporary_path, destination)
         temporary_path = None
-
-        try:
-            directory_fd = os.open(destination_directory, os.O_RDONLY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
-        except OSError:
-            pass
+        sync_directory(destination_directory)
 
         return destination
     finally:
@@ -1108,13 +1122,60 @@ def publish_hosts_file(staged_file, destination, backup):
 
 
 # Helper Functions
+def require_repository_path(path, description):
+    """Reject paths that resolve outside the repository checkout."""
+
+    repository_path = os.path.realpath(BASEDIR_PATH)
+    resolved_path = os.path.realpath(path)
+    if not (resolved_path == repository_path or
+            resolved_path.startswith(repository_path + os.sep)):
+        raise ValueError(description + " must stay inside the repository")
+
+
+def get_file_metadata(destination, default_mode):
+    """Return replacement metadata without following symbolic links."""
+
+    if os.path.lexists(destination) and os.path.islink(destination):
+        raise ValueError("atomic destinations must not be symbolic links")
+    if os.path.exists(destination):
+        destination_stat = os.stat(destination)
+        return (destination_stat.st_mode & 0o777,
+                destination_stat.st_uid, destination_stat.st_gid)
+    return default_mode, None, None
+
+
+def apply_file_metadata(file_descriptor, path, mode, uid, gid):
+    """Apply destination permissions and ownership to a staged file."""
+
+    if hasattr(os, "fchmod"):
+        os.fchmod(file_descriptor, mode)
+    else:
+        os.chmod(path, mode)
+    if uid is not None and gid is not None and hasattr(os, "fchown"):
+        os.fchown(file_descriptor, uid, gid)
+
+
+def sync_directory(directory):
+    """Make a completed rename or file creation durable."""
+
+    try:
+        directory_fd = os.open(directory, os.O_RDONLY)
+    except OSError:
+        if os.name == "nt":
+            return
+        raise
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
 def write_json_file_atomically(destination, data):
     """Replace a JSON file only after its serialized data is durable."""
 
     destination_directory = os.path.dirname(destination) or "."
-    destination_mode = 0o644
-    if os.path.exists(destination):
-        destination_mode = os.stat(destination).st_mode & 0o777
+    destination_mode, destination_uid, destination_gid = get_file_metadata(
+        destination, 0o644)
 
     temporary_path = None
     try:
@@ -1124,11 +1185,14 @@ def write_json_file_atomically(destination, data):
             temporary_path = temporary_file.name
             json.dump(data, temporary_file)
             temporary_file.flush()
-            os.chmod(temporary_path, destination_mode)
+            apply_file_metadata(
+                temporary_file.fileno(), temporary_path, destination_mode,
+                destination_uid, destination_gid)
             os.fsync(temporary_file.fileno())
 
         os.replace(temporary_path, destination)
         temporary_path = None
+        sync_directory(destination_directory)
     finally:
         if temporary_path is not None:
             try:
@@ -1141,9 +1205,8 @@ def write_source_file_atomically(destination, data):
     """Replace a cached source file only after its new data is durable."""
 
     destination_directory = os.path.dirname(destination) or "."
-    destination_mode = 0o644
-    if os.path.exists(destination):
-        destination_mode = os.stat(destination).st_mode & 0o777
+    destination_mode, destination_uid, destination_gid = get_file_metadata(
+        destination, 0o644)
 
     temporary_path = None
     try:
@@ -1153,11 +1216,14 @@ def write_source_file_atomically(destination, data):
             temporary_path = temporary_file.name
             write_data(temporary_file, data)
             temporary_file.flush()
-            os.chmod(temporary_path, destination_mode)
+            apply_file_metadata(
+                temporary_file.fileno(), temporary_path, destination_mode,
+                destination_uid, destination_gid)
             os.fsync(temporary_file.fileno())
 
         os.replace(temporary_path, destination)
         temporary_path = None
+        sync_directory(destination_directory)
     finally:
         if temporary_path is not None:
             try:
