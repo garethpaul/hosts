@@ -1,5 +1,42 @@
 # Changes
 
+## 2026-06-19
+
+- Preserved every valid hostname alias on multi-host source lines while
+  applying exclusions independently to avoid losing unrelated block entries.
+- Closed atomic-publication races by copying backups through their exclusively
+  allocated descriptors, rejecting symlink destinations, preserving ownership,
+  and syncing parent directories after replacement.
+
+## 2026-06-17
+
+- Backup allocation is exclusive, so same-second publications preserve distinct recovery copies.
+
+## 2026-06-16
+
+- Generated hosts outputs preserve the last good file until atomic publication.
+
+## 2026-06-15
+
+- Alternate --output generation removes or backs up only the selected hosts file and leaves the repository-root hosts data unchanged.
+- Source fetch exceptions are reported generically without URL, query, or
+  exception details.
+
+## 2026-06-14
+
+- Ensured credential-bearing source URLs are never reproduced in refresh logs
+  while preserving non-sensitive source-directory context.
+
+## 2026-06-13
+
+- Made every Make verification target derive the checkout root so the
+  generated-data baseline works from external directories.
+- Rejected output subfolders whose symbolic links resolve outside the
+  repository while preserving internal symlink targets.
+- Validated `--ip` as a strict IPv4 or IPv6 literal before source discovery or
+  output generation, rejecting hostnames, malformed addresses, whitespace, and
+  line injection.
+
 ## 2026-06-10
 
 - Rejected malformed upstream hostnames before they can become generated block
@@ -15,6 +52,8 @@
   checkout credentials, enforced its full shape, and added CODEOWNERS.
 - Made source refreshes atomic so failed writes preserve the last known-good
   cached hosts data and remove incomplete temporary files.
+- Made `readmeData.json` writes atomic so failed serialization or filesystem
+  writes preserve the last-known-good provenance metadata.
 ## 2026-06-09
 
 - Validated updater output subfolders so generated hosts writes stay inside the

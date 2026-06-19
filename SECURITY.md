@@ -24,6 +24,8 @@ Helpful reports include:
 
 ## Project Security Posture
 
+Generated hosts outputs preserve the last good file until atomic publication.
+
 - This repository appears to be a public sample, documentation, or utility project. The active security scope is the code and documentation on the default branch.
 - Review found authentication, token, or session-related code paths; changes in those areas should receive security-focused review before merge.
 - Review found network clients, sockets, web APIs, or service endpoints; changes in those areas should receive security-focused review before merge.
@@ -36,16 +38,28 @@ Helpful reports include:
 - Reject malformed upstream DNS labels before they are normalized into the
   generated hosts file.
 - `updateFile.py` can fetch remote source lists and can replace the local hosts file through privileged `sudo` operations when replacement options are used. Treat changes to source URLs, source metadata, subprocess calls, backup behavior, and DNS flush logic as security-sensitive.
+- Backup allocation is exclusive, so same-second publications preserve distinct recovery copies.
 - Source URLs must use HTTPS so source payloads are authenticated in transit;
   informational home and issue links remain provenance metadata rather than
   updater fetch targets.
 - Source fetches reject credentials, IP literals, malformed authorities, and
   HTTPS redirects that leave the validated DNS-host boundary. Responses retain
   a 30-second timeout and a 32 MiB read limit.
+- Credential-bearing source URLs are never reproduced in refresh logs; failure
+  messages retain only non-sensitive source context.
+- Source fetch exceptions are reported generically without URL, query, or
+  exception details.
 - Source refreshes preserve the last known-good cached file until a complete
   replacement has been written and synced, and remove partial temporary files.
-- Output subfolders should stay inside the repository tree so generated hosts
-  writes cannot escape through absolute paths or parent traversal.
+- Generated provenance uses atomic metadata replacement so an interrupted
+  `readmeData.json` write cannot truncate the last-known-good metadata.
+- Output subfolders and resolved symlink targets should stay inside the
+  repository tree so generated hosts writes cannot escape through absolute
+  paths, parent traversal, or external symbolic links.
+- Alternate --output generation removes or backs up only the selected hosts file and leaves the repository-root hosts data unchanged.
+- The generated-rule `--ip` target must be a strict IPv4 or IPv6 literal;
+  whitespace, hostnames, malformed addresses, and line injection are rejected
+  before source refresh or file generation.
 - `make check` runs the static baseline for hosts syntax, generated counts, duplicate scope, JSON metadata, and Python updater syntax without network access or local hosts replacement. It also checks HTTPS source URLs, host validation, timeouts, response cleanup, and atomic source refreshes.
 - Hosted validation is read-only, uses immutable actions without persisted
   checkout credentials, and runs no network-fetch or privileged updater path.

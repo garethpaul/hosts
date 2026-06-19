@@ -21,6 +21,11 @@ import json
 # Detecting Python 3 for version-dependent implementations
 PY3 = sys.version_info >= (3, 0)
 
+try:
+    STRING_TYPES = (basestring,)
+except NameError:
+    STRING_TYPES = (str,)
+
 if PY3:
     from urllib.request import build_opener, HTTPRedirectHandler
     from urllib.parse import urlparse
@@ -120,7 +125,9 @@ def main():
     options = vars(parser.parse_args())
 
     if not is_safe_output_subfolder(options["outputsubfolder"]):
-        parser.error("--output must be a relative subfolder without parent traversal")
+        parser.error("--output must resolve to a relative subfolder inside the repository")
+    if not is_valid_target_ip(options["targetip"]):
+        parser.error("--ip must be a valid IPv4 or IPv6 literal")
 
     options["outputpath"] = path_join_robust(BASEDIR_PATH,
                                              options["outputsubfolder"])
@@ -169,18 +176,28 @@ def main():
                                        sourcedatafilename=source_data_filename)
 
     merge_file = create_initial_file()
-    remove_old_hosts_file(settings["backup"])
-    final_file = remove_dups_and_excl(merge_file, exclusion_regexes)
+    selected_hosts_file = path_join_robust(
+        settings["outputpath"], settings["hostfilename"])
+    final_file = create_staged_hosts_file(settings["outputpath"])
+    try:
+        final_file = remove_dups_and_excl(
+            merge_file, exclusion_regexes, final_file)
 
-    number_of_rules = settings["numberofrules"]
-    output_subfolder = settings["outputsubfolder"]
-    skip_static_hosts = settings["skipstatichosts"]
+        number_of_rules = settings["numberofrules"]
+        output_subfolder = settings["outputsubfolder"]
+        skip_static_hosts = settings["skipstatichosts"]
 
-    write_opening_header(final_file, extensions=extensions,
-                         numberofrules=number_of_rules,
-                         outputsubfolder=output_subfolder,
-                         skipstatichosts=skip_static_hosts)
-    final_file.close()
+        write_opening_header(final_file, extensions=extensions,
+                             numberofrules=number_of_rules,
+                             outputsubfolder=output_subfolder,
+                             skipstatichosts=skip_static_hosts)
+        published_hosts_file = publish_hosts_file(
+            final_file, selected_hosts_file, settings["backup"])
+    except Exception:
+        if not merge_file.closed:
+            merge_file.close()
+        discard_staged_hosts_file(final_file)
+        raise
 
     update_readme_data(settings["readmedatafilename"],
                        extensions=extensions,
@@ -193,7 +210,7 @@ def main():
                   "{:,}".format(number_of_rules) +
                   " unique entries.")
 
-    move_file = prompt_for_move(final_file, auto=auto,
+    move_file = prompt_for_move(published_hosts_file, auto=auto,
                                 replace=settings["replace"],
                                 skipstatichosts=skip_static_hosts)
 
@@ -302,15 +319,15 @@ def prompt_for_flush_dns_cache(flush_cache, prompt_flush):
             flush_dns_cache()
 
 
-def prompt_for_move(final_file, **move_params):
+def prompt_for_move(hosts_file_path, **move_params):
     """
     Prompt the user to move the newly created hosts file to its designated
     location in the OS.
 
     Parameters
     ----------
-    final_file : file
-        The file object that contains the newly created hosts data.
+    hosts_file_path : str
+        The published file that contains the newly created hosts data.
     move_params : kwargs
         Dictionary providing additional parameters for moving the hosts file
         into place. Currently, those fields are:
@@ -337,7 +354,7 @@ def prompt_for_move(final_file, **move_params):
         move_file = query_yes_no(prompt)
 
     if move_file:
-        move_hosts_file_into_place(final_file)
+        move_hosts_file_into_place(hosts_file_path)
 
     return move_file
 # End Prompt the User
@@ -362,7 +379,6 @@ def display_exclusion_options(common_exclusions, exclusion_pattern,
         The exclusion pattern with which to create the domain regex.
     exclusion_regexes : list
         The list of regex patterns used to exclude domains.
-
     Returns
     -------
     aug_exclusion_regexes : list
@@ -551,9 +567,9 @@ def update_all_sources(source_data_filename, host_filename):
         with open(source, "r") as update_file:
             update_data = json.load(update_file)
         update_url = update_data["url"]
+        source_context = os.path.dirname(source)
 
-        print("Updating source " + os.path.dirname(
-            source) + " from " + update_url)
+        print("Updating source " + source_context)
 
         try:
             updated_file = get_file_by_url(update_url)
@@ -566,7 +582,7 @@ def update_all_sources(source_data_filename, host_filename):
                                            host_filename)
             write_source_file_atomically(destination, updated_file)
         except Exception:
-            print("Error in updating source: ", update_url)
+            print("Error in updating source: " + source_context)
 # End Update Logic
 
 
@@ -598,7 +614,19 @@ def create_initial_file():
     return merge_file
 
 
-def remove_dups_and_excl(merge_file, exclusion_regexes):
+def create_staged_hosts_file(output_path):
+    """Create an owned temporary hosts file beside the selected output."""
+
+    require_repository_path(output_path, "output directory")
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+    require_repository_path(output_path, "output directory")
+    return tempfile.NamedTemporaryFile(
+        mode="w+b" if PY3 else "w+", dir=output_path,
+        prefix=".hosts-output-", delete=False)
+
+
+def remove_dups_and_excl(merge_file, exclusion_regexes, final_file):
     """
     Remove duplicates and remove hosts that we are excluding.
 
@@ -611,6 +639,8 @@ def remove_dups_and_excl(merge_file, exclusion_regexes):
         The file object that contains the hostnames that we are pruning.
     exclusion_regexes : list
         The list of regex patterns used to exclude domains.
+    final_file : file
+        The staged output file that receives normalized hosts data.
     """
 
     number_of_rules = settings["numberofrules"]
@@ -620,13 +650,6 @@ def remove_dups_and_excl(merge_file, exclusion_regexes):
                 line = line.strip(" \t\n\r")
                 if line and not line.startswith("#"):
                     settings["exclusions"].append(line)
-
-    if not os.path.exists(settings["outputpath"]):
-        os.makedirs(settings["outputpath"])
-
-    # Another mode is required to read and write the file in Python 3
-    final_file = open(path_join_robust(settings["outputpath"], "hosts"),
-                      "w+b" if PY3 else "w+")
 
     merge_file.seek(0)  # reset file pointer
     hostnames = {"localhost", "localhost.localdomain",
@@ -652,25 +675,23 @@ def remove_dups_and_excl(merge_file, exclusion_regexes):
         if "::1" in line:
             continue
 
-        stripped_rule = strip_rule(line)  # strip comments
-        if not stripped_rule or matches_exclusions(stripped_rule,
-                                                   exclusion_regexes):
-            continue
-
-        # Normalize rule
-        hostname, normalized_rule = normalize_rule(
-            stripped_rule, target_ip=settings["targetip"],
+        normalized_rules = normalize_rules(
+            line, target_ip=settings["targetip"],
             keep_domain_comments=settings["keepdomaincomments"])
 
-        for exclude in exclusions:
-            if re.search(r'[\s\.]' + re.escape(exclude) + r'\s', line):
-                write_line = False
-                break
+        for hostname, normalized_rule in normalized_rules:
+            write_line = not matches_exclusions(
+                normalized_rule, exclusion_regexes)
+            for exclude in exclusions:
+                if (hostname == exclude or
+                        hostname.endswith("." + exclude)):
+                    write_line = False
+                    break
 
-        if normalized_rule and (hostname not in hostnames) and write_line:
-            write_data(final_file, normalized_rule)
-            hostnames.add(hostname)
-            number_of_rules += 1
+            if hostname not in hostnames and write_line:
+                write_data(final_file, normalized_rule)
+                hostnames.add(hostname)
+                number_of_rules += 1
 
     settings["numberofrules"] = number_of_rules
     merge_file.close()
@@ -699,27 +720,36 @@ def normalize_rule(rule, target_ip, keep_domain_comments):
         and spacing reformatted.
     """
 
-    regex = r'^\s*(\d{1,3}\.){3}\d{1,3}\s+([\w\.-]+[a-zA-Z])(.*)'
-    result = re.search(regex, rule)
-
-    if result:
-        hostname, suffix = result.group(2, 3)
-
-        # Explicitly lowercase and trim the hostname.
-        hostname = hostname.lower().strip()
-        if not is_valid_source_hostname(hostname):
-            print("==>%s<==" % rule)
-            return None, None
-
-        rule = "%s %s" % (target_ip, hostname)
-
-        if suffix and keep_domain_comments:
-            rule += " #%s" % suffix
-
-        return hostname, rule + "\n"
-
-    print("==>%s<==" % rule)
+    normalized_rules = normalize_rules(
+        rule, target_ip, keep_domain_comments)
+    if normalized_rules:
+        return normalized_rules[0]
     return None, None
+
+
+def normalize_rules(rule, target_ip, keep_domain_comments):
+    """Normalize every valid hostname alias in one hosts-file rule."""
+
+    uncommented_rule, separator, comment = rule.partition("#")
+    fields = uncommented_rule.split()
+    if (len(fields) < 2 or
+            re.match(r'^(\d{1,3}\.){3}\d{1,3}$', fields[0]) is None):
+        print("==>%s<==" % rule)
+        return []
+
+    normalized_rules = []
+    for source_hostname in fields[1:]:
+        hostname = source_hostname.lower().strip().rstrip(".")
+        if not is_valid_source_hostname(hostname):
+            print("==>%s<==" % source_hostname)
+            continue
+
+        normalized_rule = "%s %s" % (target_ip, hostname)
+        if separator and comment and keep_domain_comments:
+            normalized_rule += " #" + comment
+        normalized_rules.append((hostname, normalized_rule + "\n"))
+
+    return normalized_rules
 
 
 def is_valid_source_hostname(hostname):
@@ -732,6 +762,23 @@ def is_valid_source_hostname(hostname):
         r"^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+"
         r"[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?$")
     return bool(hostname_format_regex.match(hostname))
+
+
+def is_valid_target_ip(target_ip):
+    """Return whether a target hosts address is a strict IP literal."""
+
+    if (not isinstance(target_ip, STRING_TYPES) or not target_ip or
+            target_ip != target_ip.strip() or
+            any(character.isspace() for character in target_ip)):
+        return False
+
+    for address_family in (socket.AF_INET, socket.AF_INET6):
+        try:
+            socket.inet_pton(address_family, target_ip)
+            return True
+        except (AttributeError, OSError, socket.error):
+            pass
+    return False
 
 
 def is_valid_source_url(url):
@@ -895,11 +942,10 @@ def update_readme_data(readme_file, **readme_updates):
         readme_data = json.load(f)
         readme_data[extensions_key] = generation_data
 
-    with open(readme_file, "w") as f:
-        json.dump(readme_data, f)
+    write_json_file_atomically(readme_file, readme_data)
 
 
-def move_hosts_file_into_place(final_file):
+def move_hosts_file_into_place(hosts_file_path):
     r"""
     Move the newly-created hosts file into its correct location on the OS.
 
@@ -912,11 +958,11 @@ def move_hosts_file_into_place(final_file):
 
     Parameters
     ----------
-    final_file : file object
-        The newly-created hosts file to move.
+    hosts_file_path : str
+        The published hosts file to move.
     """
 
-    filename = os.path.abspath(final_file.name)
+    filename = os.path.abspath(hosts_file_path)
 
     if os.name == "posix":
         print("Moving the file requires administrative privileges. "
@@ -1000,46 +1046,167 @@ def flush_dns_cache():
             print_failure("Unable to determine DNS management tool.")
 
 
-def remove_old_hosts_file(backup):
-    """
-    Remove the old hosts file.
+def discard_staged_hosts_file(staged_file):
+    """Close and remove an unpublished temporary hosts file."""
 
-    This is a hotfix because merging with an already existing hosts file leads
-    to artifacts and duplicates.
+    temporary_path = staged_file.name
+    if not staged_file.closed:
+        staged_file.close()
+    if os.path.exists(temporary_path):
+        try:
+            os.remove(temporary_path)
+        except OSError:
+            pass
 
-    Parameters
-    ----------
-    backup : boolean, default False
-        Whether or not to backup the existing hosts file.
-    """
 
-    old_file_path = path_join_robust(BASEDIR_PATH, "hosts")
+def create_hosts_backup(destination):
+    """Copy a destination into an exclusively allocated recovery file."""
 
-    # Create if already removed, so remove won't raise an error.
-    open(old_file_path, "a").close()
+    destination_directory = os.path.dirname(destination) or "."
+    destination_mode, destination_uid, destination_gid = get_file_metadata(
+        destination, 0o644)
+    backup_prefix = "{}-{}-".format(
+        os.path.basename(destination), time.strftime("%Y-%m-%d-%H-%M-%S"))
+    descriptor, backup_file_path = tempfile.mkstemp(
+        dir=destination_directory, prefix=backup_prefix)
+    try:
+        with os.fdopen(descriptor, "wb") as backup_file:
+            descriptor = None
+            with open(destination, "rb") as destination_file:
+                shutil.copyfileobj(destination_file, backup_file)
+            backup_file.flush()
+            apply_file_metadata(
+                backup_file.fileno(), backup_file_path, destination_mode,
+                destination_uid, destination_gid)
+            os.fsync(backup_file.fileno())
+        sync_directory(destination_directory)
+    except Exception:
+        if descriptor is not None:
+            os.close(descriptor)
+        try:
+            os.remove(backup_file_path)
+        except OSError:
+            pass
+        raise
+    return backup_file_path
 
-    if backup:
-        backup_file_path = path_join_robust(BASEDIR_PATH, "hosts-{}".format(
-            time.strftime("%Y-%m-%d-%H-%M-%S")))
 
-        # Make a backup copy, marking the date in which the list was updated
-        shutil.copy(old_file_path, backup_file_path)
+def publish_hosts_file(staged_file, destination, backup):
+    """Durably replace the selected output with a completed staged file."""
 
-    os.remove(old_file_path)
+    destination_directory = os.path.dirname(destination) or "."
+    temporary_path = staged_file.name
+    try:
+        require_repository_path(destination_directory, "output directory")
+        destination_mode, destination_uid, destination_gid = get_file_metadata(
+            destination, 0o644)
+        staged_file.flush()
+        apply_file_metadata(
+            staged_file.fileno(), temporary_path, destination_mode,
+            destination_uid, destination_gid)
+        os.fsync(staged_file.fileno())
+        staged_file.close()
 
-    # Create new empty hosts file
-    open(old_file_path, "a").close()
+        if backup and os.path.lexists(destination):
+            create_hosts_backup(destination)
+
+        os.replace(temporary_path, destination)
+        temporary_path = None
+        sync_directory(destination_directory)
+
+        return destination
+    finally:
+        if temporary_path is not None:
+            discard_staged_hosts_file(staged_file)
 # End File Logic
 
 
 # Helper Functions
+def require_repository_path(path, description):
+    """Reject paths that resolve outside the repository checkout."""
+
+    repository_path = os.path.realpath(BASEDIR_PATH)
+    resolved_path = os.path.realpath(path)
+    if not (resolved_path == repository_path or
+            resolved_path.startswith(repository_path + os.sep)):
+        raise ValueError(description + " must stay inside the repository")
+
+
+def get_file_metadata(destination, default_mode):
+    """Return replacement metadata without following symbolic links."""
+
+    if os.path.lexists(destination) and os.path.islink(destination):
+        raise ValueError("atomic destinations must not be symbolic links")
+    if os.path.exists(destination):
+        destination_stat = os.stat(destination)
+        return (destination_stat.st_mode & 0o777,
+                destination_stat.st_uid, destination_stat.st_gid)
+    return default_mode, None, None
+
+
+def apply_file_metadata(file_descriptor, path, mode, uid, gid):
+    """Apply destination permissions and ownership to a staged file."""
+
+    if hasattr(os, "fchmod"):
+        os.fchmod(file_descriptor, mode)
+    else:
+        os.chmod(path, mode)
+    if uid is not None and gid is not None and hasattr(os, "fchown"):
+        os.fchown(file_descriptor, uid, gid)
+
+
+def sync_directory(directory):
+    """Make a completed rename or file creation durable."""
+
+    try:
+        directory_fd = os.open(directory, os.O_RDONLY)
+    except OSError:
+        if os.name == "nt":
+            return
+        raise
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
+def write_json_file_atomically(destination, data):
+    """Replace a JSON file only after its serialized data is durable."""
+
+    destination_directory = os.path.dirname(destination) or "."
+    destination_mode, destination_uid, destination_gid = get_file_metadata(
+        destination, 0o644)
+
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+                mode="w", dir=destination_directory,
+                prefix=".readme-data-", delete=False) as temporary_file:
+            temporary_path = temporary_file.name
+            json.dump(data, temporary_file)
+            temporary_file.flush()
+            apply_file_metadata(
+                temporary_file.fileno(), temporary_path, destination_mode,
+                destination_uid, destination_gid)
+            os.fsync(temporary_file.fileno())
+
+        os.replace(temporary_path, destination)
+        temporary_path = None
+        sync_directory(destination_directory)
+    finally:
+        if temporary_path is not None:
+            try:
+                os.remove(temporary_path)
+            except OSError:
+                pass
+
+
 def write_source_file_atomically(destination, data):
     """Replace a cached source file only after its new data is durable."""
 
     destination_directory = os.path.dirname(destination) or "."
-    destination_mode = 0o644
-    if os.path.exists(destination):
-        destination_mode = os.stat(destination).st_mode & 0o777
+    destination_mode, destination_uid, destination_gid = get_file_metadata(
+        destination, 0o644)
 
     temporary_path = None
     try:
@@ -1049,11 +1216,14 @@ def write_source_file_atomically(destination, data):
             temporary_path = temporary_file.name
             write_data(temporary_file, data)
             temporary_file.flush()
-            os.chmod(temporary_path, destination_mode)
+            apply_file_metadata(
+                temporary_file.fileno(), temporary_path, destination_mode,
+                destination_uid, destination_gid)
             os.fsync(temporary_file.fileno())
 
         os.replace(temporary_path, destination)
         temporary_path = None
+        sync_directory(destination_directory)
     finally:
         if temporary_path is not None:
             try:
@@ -1092,8 +1262,8 @@ def get_file_by_url(url):
             return source_data.decode("UTF-8")
         finally:
             f.close()
-    except Exception as error:
-        print("Problem getting source file: {0}".format(error))
+    except Exception:
+        print("Problem getting source file.")
 
 
 def write_data(f, data):
@@ -1236,7 +1406,14 @@ def is_safe_output_subfolder(output_subfolder):
             re.match(r"^[A-Za-z]:", output_subfolder)):
         return False
 
-    return ".." not in re.split(r"[\\/]+", output_subfolder)
+    if ".." in re.split(r"[\\/]+", output_subfolder):
+        return False
+
+    repository_path = os.path.realpath(BASEDIR_PATH)
+    output_path = os.path.realpath(path_join_robust(
+        repository_path, output_subfolder))
+    return (output_path == repository_path or
+            output_path.startswith(repository_path + os.sep))
 
 
 def recursive_glob(stem, file_pattern):

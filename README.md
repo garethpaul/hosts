@@ -57,8 +57,9 @@ The checked-in `hosts` file is a generated snapshot. The updater references sour
 - Custom exclusions must be plain domains, and they are escaped before regex
   compilation so domain dots are matched literally. Custom exclusions are
   normalized to lowercase before matching generated hosts entries.
-- Output subfolders must be relative paths without parent traversal, so
-  generated hosts files stay inside the repository tree.
+- Output subfolders must be relative paths without parent traversal, and their
+  symlinks must resolve inside the repository tree.
+- Alternate --output generation removes or backs up only the selected hosts file and leaves the repository-root hosts data unchanged.
 - Do not run replacement actions against `/etc/hosts` unless you understand the local impact and have a rollback copy.
 
 ## Testing and Verification
@@ -83,8 +84,22 @@ Source metadata file handles are also checked so JSON reads close promptly while
 building source data. Refreshed source files are written and synced beside the
 cached file, then atomically replaced so failures preserve the last known-good
 source and remove incomplete temporary files.
+Credential-bearing source URLs are never reproduced in refresh logs; refresh
+messages retain only the non-sensitive source directory.
+Source fetch exceptions are reported generically without URL, query, or
+exception details.
 Output subfolders are checked so updater writes cannot target paths outside the
-repository through absolute paths or parent traversal.
+repository through absolute paths, parent traversal, or escaping symlinks.
+Publication rechecks containment at the write boundary, rejects symlinked
+destination files, preserves existing mode and ownership where supported, and
+syncs parent directories after atomic replacement. Backup bytes are copied
+through the exclusively allocated file descriptor rather than reopening a
+raceable path.
+Source lines containing multiple hostname aliases preserve each valid alias;
+deduplication and exclusions are applied to each hostname independently.
+The `--ip` target must be a valid IPv4 or IPv6 literal and is rejected before
+source discovery or output generation if it contains whitespace, a hostname,
+an out-of-range address, or injected lines.
 GitHub Actions runs the same no-network `make check` gate through
 `.github/workflows/check.yml` on pushes and pull requests using Python 3.10,
 3.12, and 3.14 with read-only permissions and no persisted checkout credential.
@@ -97,6 +112,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
 
 ## Security and Privacy Notes
 
+Generated hosts outputs preserve the last good file until atomic publication.
+
 - Review changes touching authentication or token handling; examples from the scan include updateFile.py.
 - Review changes touching network requests, sockets, or service endpoints; examples from the scan include readmeData.json, updateFile.py.
 - Review changes touching file, media, JSON, XML, CSV, OCR, or data parsing; examples from the scan include updateFile.py.
@@ -108,12 +125,15 @@ When the required SDK or runtime is unavailable, use static checks and source re
   ports, or invalid DNS labels; redirects must remain inside the same policy.
 - Source responses are limited to 32 MiB and retain the 30-second timeout.
 - Failed source refreshes preserve the last known-good cached source file.
+- `readmeData.json` updates are atomically replaced so failed serialization or
+  writes preserve the last-known-good generated provenance metadata.
 - Upstream entries are normalized only when their hostnames use valid DNS
   labels; underscores, empty labels, and leading or trailing hyphens are
   rejected, as are overlong labels or names.
-- Output subfolders must stay inside the repository before generated hosts data
-  is written.
+- Output subfolders and symlink targets must stay inside the repository before
+  generated hosts data is written.
 - `updateFile.py --replace` and DNS flush behavior can affect the local machine's `/etc/hosts`; review generated output and keep backups before privileged replacement.
+- Backup allocation is exclusive, so same-second publications preserve distinct recovery copies.
 
 ## Maintenance Notes
 
@@ -146,6 +166,8 @@ When the required SDK or runtime is unavailable, use static checks and source re
   workflow enforcement.
 - See `docs/plans/2026-06-09-make-gate-aliases.md` for the local gate alias guardrail.
 - Run `make lint`, `make test`, `make build`, and `make check` before pushing changes to `hosts`, `readmeData.json`, updater code, or source metadata.
+- Every Make verification target derives the checkout root from the loaded
+  Makefile, so an absolute Makefile path works from any working directory.
 
 ## Contributing
 

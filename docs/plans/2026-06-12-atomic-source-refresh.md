@@ -29,3 +29,24 @@ the last known-good input used to generate the combined hosts file.
 - `git diff --check`
 - Mutations that restore direct destination writes or skip temporary-file
   cleanup must fail the baseline.
+
+## Work Completed
+
+- Wrote refreshed source data to a same-directory temporary file, flushed and
+  synced it, and atomically replaced the cached destination only after a
+  complete write.
+- Preserved the last known-good cached hosts file and removed incomplete
+  temporary files on refresh failure.
+- Added dependency-free success and failure fixtures plus maintenance
+  documentation for the atomic refresh guarantee.
+
+## Verification Completed
+
+- All four Make gates, `python3 -m py_compile updateFile.py scripts/check-baseline.py`,
+  and `git diff --check` passed locally.
+- Implementation push run `27394221497` and pull-request run `27394225763`
+  passed at commit `24971bab959ef78830c7aa2dcb101ee323c01771`.
+- Post-merge push run `27394241606` and CodeQL setup run `27402322510` passed
+  at default-branch merge commit `4686938e9a01d89e566af2e7a03c9f90f1cb1f15`.
+- Mutations restoring direct destination writes or removing temporary-file
+  cleanup were rejected by the baseline.

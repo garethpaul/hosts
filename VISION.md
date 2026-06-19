@@ -27,11 +27,17 @@ Priority:
 - Keep custom exclusion inputs limited to plain domains before regex compilation
 - Normalize custom exclusions to lowercase before matching generated hostnames
 - Ensure source URLs use HTTPS and include hosts before the updater fetches them
-- Keep output subfolders inside the repository before generated hosts writes
+- Keep output subfolders, including symlink resolution, inside the repository
+  before generated hosts writes
+- Alternate --output generation removes or backs up only the selected hosts file and leaves the repository-root hosts data unchanged.
 - Keep `make lint`, `make test`, `make build`, and `make check` available as
   local verification gates
 - Keep GitHub Actions running the no-network `make check` baseline
 - Keep source redirects HTTPS-only and source responses bounded to 32 MiB
+- Ensure credential-bearing source URLs are never reproduced in refresh logs
+- Ensure source fetch exceptions are reported generically without URL, query,
+  or exception details
+- Validate `--ip` as a strict IPv4 or IPv6 literal before source or output work
 
 Next priorities:
 
@@ -46,6 +52,9 @@ Contribution rules:
 - Verify generated hosts output before pushing data changes.
 
 ## Security And Reliability
+
+Generated hosts outputs preserve the last good file until atomic publication.
+Backup allocation is exclusive, so same-second publications preserve distinct recovery copies.
 
 Canonical security policy and reporting:
 
@@ -68,7 +77,10 @@ Source authorities reject credentials, IP literals, malformed ports, and
 invalid DNS labels before network access; redirects remain inside that policy.
 Source refreshes sync a same-directory temporary file before atomic replacement,
 preserving the last known-good source and cleaning up partial writes on failure.
-Output subfolders are constrained to relative paths within the repository.
+Generated provenance updates replace `readmeData.json` atomically after the
+complete JSON payload has been flushed and synced.
+Output subfolders are constrained to relative paths whose symlinks resolve
+within the repository.
 Custom exclusions are normalized to lowercase before matching generated hosts.
 
 ## What We Will Not Merge (For Now)

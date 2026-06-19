@@ -27,6 +27,15 @@ SOURCE_HOSTNAME_PLAN = ROOT / "docs/plans/2026-06-10-source-hostname-validation.
 NETWORK_BOUNDARY_PLAN = ROOT / "docs/plans/2026-06-12-source-network-boundary.md"
 CI_POLICY_PLAN = ROOT / "docs/plans/2026-06-12-ci-policy-hardening.md"
 ATOMIC_REFRESH_PLAN = ROOT / "docs/plans/2026-06-12-atomic-source-refresh.md"
+TARGET_IP_PLAN = ROOT / "docs/plans/2026-06-13-target-ip-validation.md"
+OUTPUT_SYMLINK_PLAN = ROOT / "docs/plans/2026-06-13-output-symlink-containment.md"
+ATOMIC_README_DATA_PLAN = ROOT / "docs/plans/2026-06-13-atomic-readme-metadata.md"
+LOCATION_INDEPENDENT_MAKE_PLAN = ROOT / "docs/plans/2026-06-13-location-independent-make.md"
+CREDENTIAL_SAFE_REFRESH_LOGGING_PLAN = ROOT / "docs/plans/2026-06-14-credential-safe-refresh-logging.md"
+NETWORK_ERROR_REDACTION_PLAN = ROOT / "docs/plans/2026-06-15-network-error-redaction.md"
+OUTPUT_TARGET_PLAN = ROOT / "docs/plans/2026-06-15-output-target-preservation.md"
+ATOMIC_OUTPUT_PLAN = ROOT / "docs/plans/2026-06-16-atomic-output-publication.md"
+UNIQUE_BACKUP_PLAN = ROOT / "docs/plans/2026-06-17-unique-hosts-backups.md"
 HOST_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 HEADER_COUNT_RE = re.compile(r"Number of unique domains:\s*([0-9,]+)")
 
@@ -135,6 +144,185 @@ def check_output_subfolder_validation(failures):
     for output_path in ["../outside", "generated/../outside", "/tmp/hosts", r"C:\hosts", r"\windows\hosts", r"\\server\share"]:
         require(not validator(output_path), f"--output should reject unsafe subfolder {output_path}", failures)
 
+    with tempfile.TemporaryDirectory() as temporary_root:
+        repository = Path(temporary_root) / "repository"
+        inside = repository / "generated"
+        outside = Path(temporary_root) / "repository-outside"
+        inside.mkdir(parents=True)
+        outside.mkdir()
+        (repository / "inside-link").symlink_to(inside, target_is_directory=True)
+        (repository / "escape-link").symlink_to(outside, target_is_directory=True)
+        namespace["BASEDIR_PATH"] = str(repository)
+
+        require(validator("inside-link"),
+                "--output should accept symlinks that resolve inside the repository",
+                failures)
+        require(not validator("escape-link"),
+                "--output must reject symlinks that resolve outside the repository",
+                failures)
+
+
+def check_atomic_output_publication(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    create_staged = namespace["create_staged_hosts_file"]
+    discard_staged = namespace["discard_staged_hosts_file"]
+    publish = namespace["publish_hosts_file"]
+    with tempfile.TemporaryDirectory() as temporary_root:
+        repository = Path(temporary_root) / "repository"
+        alternate = repository / "generated"
+        alternate.mkdir(parents=True)
+        root_hosts = repository / "hosts"
+        alternate_hosts = alternate / "hosts"
+        root_hosts.write_text("root hosts\n", encoding="utf-8")
+        alternate_hosts.write_text("alternate hosts\n", encoding="utf-8")
+        alternate_hosts.chmod(0o640)
+        namespace["BASEDIR_PATH"] = str(repository)
+
+        staged = create_staged(str(alternate))
+        staged.write(b"new alternate hosts\n")
+        staged_path = Path(staged.name)
+        published = publish(staged, str(alternate_hosts), False)
+        require(published == str(alternate_hosts),
+                "publication must return the selected hosts path",
+                failures)
+        require(root_hosts.read_text(encoding="utf-8") == "root hosts\n",
+                "alternate output publication must preserve repository-root hosts data",
+                failures)
+        require(alternate_hosts.read_text(encoding="utf-8") ==
+                "new alternate hosts\n" and not staged_path.exists(),
+                "completed alternate output must atomically replace its staged file",
+                failures)
+        require(alternate_hosts.stat().st_mode & 0o777 == 0o640,
+                "atomic publication must preserve existing destination permissions",
+                failures)
+
+        staged = create_staged(str(alternate))
+        staged.write(b"replacement with backup\n")
+        publish(staged, str(alternate_hosts), True)
+        backups = list(alternate.glob("hosts-*"))
+        require(len(backups) == 1 and
+                backups[0].read_text(encoding="utf-8") ==
+                "new alternate hosts\n",
+                "backup publication must preserve the prior selected output beside it",
+                failures)
+        require(not list(repository.glob("hosts-*")),
+                "alternate output backup must not create a repository-root backup",
+                failures)
+
+        original_strftime = namespace["time"].strftime
+        namespace["time"].strftime = lambda pattern: "2026-06-17-15-20-00"
+        try:
+            staged = create_staged(str(alternate))
+            staged.write(b"same-second first publication\n")
+            publish(staged, str(alternate_hosts), True)
+            staged = create_staged(str(alternate))
+            staged.write(b"same-second second publication\n")
+            publish(staged, str(alternate_hosts), True)
+        finally:
+            namespace["time"].strftime = original_strftime
+        same_second_backups = list(alternate.glob("hosts-2026-06-17-15-20-00-*"))
+        require(len(same_second_backups) == 2 and
+                {path.read_text(encoding="utf-8")
+                 for path in same_second_backups} == {
+                    "replacement with backup\n",
+                    "same-second first publication\n",
+                },
+                "same-second publications must preserve distinct ordered recovery copies",
+                failures)
+
+        staged = create_staged(str(alternate))
+        staged.write(b"backup copy failure\n")
+        staged_path = Path(staged.name)
+        backups_before_failure = set(alternate.glob("hosts-*"))
+        original_copy = namespace["shutil"].copyfileobj
+
+        def fail_backup_copy(source, destination):
+            raise IOError("simulated backup copy failure")
+
+        try:
+            namespace["shutil"].copyfileobj = fail_backup_copy
+            try:
+                publish(staged, str(alternate_hosts), True)
+            except IOError:
+                pass
+            else:
+                failures.append("backup copy failure must propagate")
+        finally:
+            namespace["shutil"].copyfileobj = original_copy
+        require(set(alternate.glob("hosts-*")) == backups_before_failure and
+                not staged_path.exists() and
+                alternate_hosts.read_text(encoding="utf-8") ==
+                "same-second second publication\n",
+                "backup copy failure must remove only its allocated artifact and staged file",
+                failures)
+
+        first_output = repository / "new-output" / "hosts"
+        staged = create_staged(str(first_output.parent))
+        staged.write(b"first hosts\n")
+        publish(staged, str(first_output), False)
+        require(first_output.read_text(encoding="utf-8") == "first hosts\n" and
+                first_output.stat().st_mode & 0o777 == 0o644,
+                "first publication must create a complete hosts file with default mode",
+                failures)
+
+        staged = create_staged(str(alternate))
+        staged.write(b"partial hosts\n")
+        staged_path = Path(staged.name)
+        discard_staged(staged)
+        require(not staged_path.exists() and
+                alternate_hosts.read_text(encoding="utf-8") ==
+                "same-second second publication\n",
+                "generation failure cleanup must remove only the staged file",
+                failures)
+
+        staged = create_staged(str(alternate))
+        staged.write(b"failed replacement\n")
+        staged_path = Path(staged.name)
+        original_replace = namespace["os"].replace
+
+        def fail_replace(source, destination):
+            raise OSError("replacement failed")
+
+        try:
+            namespace["os"].replace = fail_replace
+            try:
+                publish(staged, str(alternate_hosts), True)
+            except OSError:
+                pass
+            else:
+                failures.append("replacement failure must propagate")
+        finally:
+            namespace["os"].replace = original_replace
+        require(not staged_path.exists() and
+                alternate_hosts.read_text(encoding="utf-8") ==
+                "same-second second publication\n",
+                "replacement failure must preserve the prior selected output",
+                failures)
+        require(any(path.read_text(encoding="utf-8") ==
+                    "same-second second publication\n"
+                    for path in alternate.glob("hosts-*")),
+                "replacement failure must retain a requested recovery backup",
+                failures)
+
+        moved_paths = []
+        namespace["move_hosts_file_into_place"] = moved_paths.append
+        namespace["prompt_for_move"](
+            str(alternate_hosts), auto=False, replace=True,
+            skipstatichosts=False)
+        require(moved_paths == [str(alternate_hosts)],
+                "privileged replacement must receive the published selected path",
+                failures)
+
 
 def check_source_hostname_validation(failures):
     namespace = {
@@ -208,6 +396,39 @@ def check_source_fetch_closes_response(failures):
             failures)
     require(response.closed,
             "get_file_by_url must close response objects after reading",
+            failures)
+
+
+def check_target_ip_validation(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    is_valid_target_ip = namespace["is_valid_target_ip"]
+    for valid_ip in ["0.0.0.0", "127.0.0.1", "255.255.255.255", "::", "::1", "2001:db8::1"]:
+        require(is_valid_target_ip(valid_ip),
+                f"target IP validation must accept {valid_ip}",
+                failures)
+    for invalid_ip in [
+            "", "example.test", "256.0.0.1", "127.0.0.1 ",
+            " 127.0.0.1", "127.0.0.1 extra", "127.0.0.1\n1.2.3.4",
+            "2001:db8::1 extra", "2001:db8:::1", None]:
+        require(not is_valid_target_ip(invalid_ip),
+                f"target IP validation must reject {invalid_ip!r}",
+                failures)
+
+    validation_call = 'if not is_valid_target_ip(options["targetip"]):'
+    require(validation_call in source and
+            source.index(validation_call) < source.index("settings = get_defaults()") and
+            source.index(validation_call) < source.index('settings["sources"] = list_dir_no_hidden'),
+            "target IP validation must run before settings, source discovery, or side effects",
             failures)
 
 
@@ -406,6 +627,182 @@ def check_source_refresh_is_atomic(failures):
                 failures)
 
 
+def check_source_refresh_logs_hide_credentials(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        source_directory = Path(temporary_directory) / "source"
+        source_directory.mkdir()
+        metadata_path = source_directory / "update.json"
+        credential_url = "https://user:secret@example.test/hosts"
+        metadata_path.write_text(
+            json.dumps({"url": credential_url}), encoding="utf-8")
+        destination = source_directory / "hosts"
+        destination.write_text("last-known-good\n", encoding="utf-8")
+        attempted_fetches = []
+
+        def fail_if_fetched(url, timeout):
+            attempted_fetches.append((url, timeout))
+            raise AssertionError("credential-bearing URL must not be fetched")
+
+        namespace["BASEDIR_PATH"] = temporary_directory
+        namespace["recursive_glob"] = lambda root, filename: [str(metadata_path)]
+        namespace["open_source_url"] = fail_if_fetched
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            namespace["update_all_sources"]("update.json", "hosts")
+
+        refresh_output = output.getvalue()
+        require(not attempted_fetches,
+                "credential-bearing source URLs must be rejected before fetching",
+                failures)
+        require("secret" not in refresh_output and
+                credential_url not in refresh_output,
+                "source refresh logs must not reproduce rejected credentials or URLs",
+                failures)
+        require(str(source_directory) in refresh_output,
+                "source refresh logs must retain non-sensitive source context",
+                failures)
+        require(destination.read_text(encoding="utf-8") == "last-known-good\n",
+                "rejected source URLs must preserve the last known-good source file",
+                failures)
+
+
+def check_source_fetch_errors_hide_url_details(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    sensitive_url = "https://example.test/hosts?token=super-secret"
+    attempted_fetches = []
+
+    def fail_with_url(url, timeout):
+        attempted_fetches.append((url, timeout))
+        raise RuntimeError("request failed for " + url + " upstream detail")
+
+    namespace["open_source_url"] = fail_with_url
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        result = namespace["get_file_by_url"](sensitive_url)
+
+    fetch_output = output.getvalue()
+    require(attempted_fetches == [
+        (sensitive_url, namespace["SOURCE_DOWNLOAD_TIMEOUT_SECONDS"])
+    ], "valid token-bearing source URLs must still reach the fetch boundary", failures)
+    require(result is None,
+            "failed source fetches must still return None",
+            failures)
+    require("Problem getting source file." in fetch_output,
+            "failed source fetches must retain a visible generic message",
+            failures)
+    require(sensitive_url not in fetch_output and
+            "super-secret" not in fetch_output and
+            "upstream detail" not in fetch_output,
+            "source fetch failures must not reproduce URL, query, or exception details",
+            failures)
+
+
+def check_readme_data_update_is_atomic(failures):
+    namespace = {
+        "__file__": str(ROOT / "updateFile.py"),
+        "__name__": "hosts_updatefile_baseline",
+    }
+    source = read("updateFile.py")
+    try:
+        exec(compile(source, str(ROOT / "updateFile.py"), "exec"), namespace)
+    except Exception as error:
+        failures.append(f"updateFile.py helpers must load without side effects: {error}")
+        return
+
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        directory = Path(temporary_directory)
+        metadata_path = directory / "readmeData.json"
+        metadata_path.write_text(
+            '{"base": {"entries": 1}, "legacy": {"entries": 2}}',
+            encoding="utf-8")
+        updates = {
+            "extensions": [],
+            "numberofrules": 3,
+            "outputsubfolder": "",
+            "sourcesdata": [{"name": "example"}],
+        }
+
+        write_events = []
+        original_fsync = namespace["os"].fsync
+        original_replace = namespace["os"].replace
+
+        def record_fsync(file_descriptor):
+            write_events.append("fsync")
+            return original_fsync(file_descriptor)
+
+        def record_replace(source, destination):
+            write_events.append("replace")
+            return original_replace(source, destination)
+
+        namespace["os"].fsync = record_fsync
+        namespace["os"].replace = record_replace
+        try:
+            namespace["update_readme_data"](str(metadata_path), **updates)
+        finally:
+            namespace["os"].fsync = original_fsync
+            namespace["os"].replace = original_replace
+
+        require(write_events == ["fsync", "replace", "fsync"],
+                "metadata updates must sync file data and the replacement directory",
+                failures)
+        updated_data = json.loads(metadata_path.read_text(encoding="utf-8"))
+        require(updated_data["legacy"] == {"entries": 2},
+                "metadata updates must preserve unrelated variant records",
+                failures)
+        require(updated_data["base"]["entries"] == 3,
+                "metadata updates must atomically replace the selected variant",
+                failures)
+        require(not list(directory.glob(".readme-data-*")),
+                "successful metadata updates must not leave temporary files",
+                failures)
+
+        last_known_good = metadata_path.read_text(encoding="utf-8")
+        original_json_dump = namespace["json"].dump
+
+        def fail_after_partial_serialization(data, output_file):
+            output_file.write('{"partial":')
+            raise IOError("simulated serialization failure")
+
+        namespace["json"].dump = fail_after_partial_serialization
+        try:
+            try:
+                namespace["update_readme_data"](str(metadata_path), **updates)
+            except IOError:
+                pass
+            else:
+                failures.append("metadata serialization failures must propagate")
+        finally:
+            namespace["json"].dump = original_json_dump
+
+        require(metadata_path.read_text(encoding="utf-8") == last_known_good,
+                "failed metadata updates must preserve the last-known-good JSON",
+                failures)
+        require(not list(directory.glob(".readme-data-*")),
+                "failed metadata updates must remove incomplete temporary files",
+                failures)
+
+
 def check_hosts_file(failures):
     hosts_text = read("hosts")
     header_match = HEADER_COUNT_RE.search(hosts_text)
@@ -501,6 +898,50 @@ def check_readme_data(failures):
 
 def main():
     failures = []
+    checker_tree = ast.parse(read("scripts/check-baseline.py"))
+    main_function = next(
+        node for node in checker_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "main"
+    )
+    atomic_output_check = next(
+        node for node in checker_tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "check_atomic_output_publication"
+    )
+    require(any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "check_source_refresh_logs_hide_credentials"
+        for node in ast.walk(main_function)
+    ), "baseline main must execute credential-safe refresh log coverage", failures)
+    require(any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "check_source_fetch_errors_hide_url_details"
+        for node in ast.walk(main_function)
+    ), "baseline main must execute source-fetch error redaction coverage", failures)
+    require(any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "check_atomic_output_publication"
+        for node in ast.walk(main_function)
+    ), "baseline main must execute atomic output publication coverage", failures)
+    require(any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "root_hosts"
+        and node.func.attr == "read_text"
+        for node in ast.walk(atomic_output_check)
+    ), "atomic output coverage must assert repository-root hosts preservation", failures)
+    require(any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "alternate"
+        and node.func.attr == "glob"
+        for node in ast.walk(atomic_output_check)
+    ), "atomic output coverage must assert alternate backup placement", failures)
     required_files = [
         ".github/CODEOWNERS",
         ".gitignore",
@@ -531,6 +972,15 @@ def main():
         "docs/plans/2026-06-12-source-network-boundary.md",
         "docs/plans/2026-06-12-ci-policy-hardening.md",
         "docs/plans/2026-06-12-atomic-source-refresh.md",
+        "docs/plans/2026-06-13-target-ip-validation.md",
+        "docs/plans/2026-06-13-output-symlink-containment.md",
+        "docs/plans/2026-06-13-atomic-readme-metadata.md",
+        "docs/plans/2026-06-13-location-independent-make.md",
+        "docs/plans/2026-06-14-credential-safe-refresh-logging.md",
+        "docs/plans/2026-06-15-network-error-redaction.md",
+        "docs/plans/2026-06-15-output-target-preservation.md",
+        "docs/plans/2026-06-16-atomic-output-publication.md",
+        "docs/plans/2026-06-17-unique-hosts-backups.md",
     ]
 
     for relative_path in required_files:
@@ -541,12 +991,17 @@ def main():
     check_exclusion_regex_escaping(failures)
     check_exclusion_domain_validation(failures)
     check_output_subfolder_validation(failures)
+    check_atomic_output_publication(failures)
     check_source_hostname_validation(failures)
+    check_target_ip_validation(failures)
     check_source_fetch_closes_response(failures)
     check_source_fetch_requires_https_host(failures)
     check_source_redirect_and_size_boundaries(failures)
     check_source_data_files_close_on_parse_failure(failures)
     check_source_refresh_is_atomic(failures)
+    check_source_refresh_logs_hide_credentials(failures)
+    check_source_fetch_errors_hide_url_details(failures)
+    check_readme_data_update_is_atomic(failures)
     check_hosts_file(failures)
     check_readme_data(failures)
 
@@ -568,6 +1023,20 @@ def main():
             "os.fsync(temporary_file.fileno())" in updater,
             "updateFile.py must atomically replace refreshed source hosts files",
             failures)
+    require('print("Updating source " + source_context)' in updater and
+            'print("Error in updating source: " + source_context)' in updater and
+            '" from " + update_url' not in updater and
+            'print("Error in updating source: ", update_url)' not in updater,
+            "updateFile.py must not reproduce configured URLs in source refresh logs",
+            failures)
+    require('print("Problem getting source file.")' in updater and
+            'print("Problem getting source file: {0}".format(error))' not in updater,
+            "updateFile.py must redact source-fetch exception details",
+            failures)
+    require("write_json_file_atomically(readme_file, readme_data)" in updater and
+            'prefix=".readme-data-"' in updater,
+            "updateFile.py must atomically replace generated README metadata",
+            failures)
     require("re.escape(" in updater,
             "updateFile.py must escape custom exclusion domains before compiling regexes",
             failures)
@@ -577,16 +1046,66 @@ def main():
     require("domain_format_regex" in updater and "example.com" in updater,
             "updateFile.py must validate custom exclusions as plain domains",
             failures)
-    require("is_safe_output_subfolder" in updater and "parser.error(\"--output must be a relative subfolder without parent traversal\")" in updater,
+    require("is_safe_output_subfolder" in updater and
+            "os.path.realpath(BASEDIR_PATH)" in updater and
+            "output_path.startswith(repository_path + os.sep)" in updater and
+            "parser.error(\"--output must resolve to a relative subfolder inside the repository\")" in updater,
             "updateFile.py must reject unsafe output subfolders before writing generated hosts files",
+            failures)
+    require('settings["outputpath"], settings["hostfilename"]' in updater and
+            'create_staged_hosts_file(settings["outputpath"])' in updater and
+            'publish_hosts_file(' in updater and
+            'final_file, selected_hosts_file, settings["backup"]' in updater and
+            'prompt_for_move(published_hosts_file' in updater and
+            "os.replace(temporary_path, destination)" in updater and
+            "remove_old_hosts_file" not in updater,
+            "updateFile.py must stage and atomically publish only the selected output hosts file",
+            failures)
+    publish_start = updater.find("def publish_hosts_file(")
+    backup_start = updater.find("def create_hosts_backup(")
+    publish_end = updater.find("# End File Logic", publish_start)
+    backup_source = updater[backup_start:publish_start]
+    publish_source = updater[publish_start:publish_end]
+    require(publish_start >= 0 and
+            'prefix=".hosts-output-"' in updater and
+            "delete=False" in updater and
+            "staged_file.flush()" in publish_source and
+            "apply_file_metadata(" in publish_source and
+            "os.fsync(staged_file.fileno())" in publish_source and
+            "os.replace(temporary_path, destination)" in publish_source and
+            "sync_directory(destination_directory)" in publish_source and
+            "discard_staged_hosts_file(staged_file)" in publish_source,
+            "hosts publication must durably stage, replace, sync, and clean its selected output",
+            failures)
+    require(backup_start >= 0 and
+            "tempfile.mkstemp(" in backup_source and
+            "time.strftime(\"%Y-%m-%d-%H-%M-%S\")" in backup_source and
+            "prefix=backup_prefix" in backup_source and
+            "os.fdopen(descriptor, \"wb\")" in backup_source and
+            "shutil.copyfileobj(destination_file, backup_file)" in backup_source and
+            "os.fsync(backup_file.fileno())" in backup_source and
+            "sync_directory(destination_directory)" in backup_source and
+            "os.remove(backup_file_path)" in backup_source and
+            "create_hosts_backup(destination)" in publish_source and
+            publish_source.find("create_hosts_backup(destination)") <
+            publish_source.find("os.replace(temporary_path, destination)"),
+            "hosts backups must be exclusively allocated, cleaned on copy failure, and completed before replacement",
             failures)
     require("is_valid_source_hostname(hostname)" in updater and "hostname_format_regex" in updater,
             "updateFile.py must reject malformed upstream hostnames before output",
+            failures)
+    require("def is_valid_target_ip" in updater and
+            'parser.error("--ip must be a valid IPv4 or IPv6 literal")' in updater and
+            "socket.inet_pton" in updater and "socket.AF_INET, socket.AF_INET6" in updater and
+            "target_ip != target_ip.strip()" in updater and
+            "any(character.isspace() for character in target_ip)" in updater,
+            "updateFile.py must reject invalid target IP values before output",
             failures)
     require("shell=True" not in updater,
             "updateFile.py must not use shell=True for privileged commands",
             failures)
 
+    agents = read("AGENTS.md")
     readme = read("README.md")
     vision = read("VISION.md")
     security = read("SECURITY.md")
@@ -610,8 +1129,21 @@ def main():
     network_boundary_plan = NETWORK_BOUNDARY_PLAN.read_text(encoding="utf-8") if NETWORK_BOUNDARY_PLAN.exists() else ""
     ci_policy_plan = CI_POLICY_PLAN.read_text(encoding="utf-8") if CI_POLICY_PLAN.exists() else ""
     atomic_refresh_plan = ATOMIC_REFRESH_PLAN.read_text(encoding="utf-8") if ATOMIC_REFRESH_PLAN.exists() else ""
+    target_ip_plan = TARGET_IP_PLAN.read_text(encoding="utf-8") if TARGET_IP_PLAN.exists() else ""
+    output_symlink_plan = OUTPUT_SYMLINK_PLAN.read_text(encoding="utf-8") if OUTPUT_SYMLINK_PLAN.exists() else ""
+    atomic_readme_data_plan = ATOMIC_README_DATA_PLAN.read_text(encoding="utf-8") if ATOMIC_README_DATA_PLAN.exists() else ""
+    location_independent_make_plan = LOCATION_INDEPENDENT_MAKE_PLAN.read_text(encoding="utf-8") if LOCATION_INDEPENDENT_MAKE_PLAN.exists() else ""
+    credential_safe_refresh_logging_plan = CREDENTIAL_SAFE_REFRESH_LOGGING_PLAN.read_text(encoding="utf-8") if CREDENTIAL_SAFE_REFRESH_LOGGING_PLAN.exists() else ""
+    network_error_redaction_plan = NETWORK_ERROR_REDACTION_PLAN.read_text(encoding="utf-8") if NETWORK_ERROR_REDACTION_PLAN.exists() else ""
+    output_target_plan = OUTPUT_TARGET_PLAN.read_text(encoding="utf-8") if OUTPUT_TARGET_PLAN.exists() else ""
+    atomic_output_plan = ATOMIC_OUTPUT_PLAN.read_text(encoding="utf-8") if ATOMIC_OUTPUT_PLAN.exists() else ""
+    unique_backup_plan = UNIQUE_BACKUP_PLAN.read_text(encoding="utf-8") if UNIQUE_BACKUP_PLAN.exists() else ""
     require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
+            failures)
+    require("ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))" in makefile and
+            '@python3 "$(ROOT)/scripts/check-baseline.py"' in makefile,
+            "Makefile must invoke the checker through the loaded repository root",
             failures)
     expected_workflow = """name: Check
 
@@ -668,6 +1200,27 @@ jobs:
     require("GitHub Actions" in changes and "https source" in changes.lower() and "timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "lowercase" in changes.lower() and "response" in changes.lower() and "source metadata file handles" in changes.lower() and "source output file handles" in changes.lower() and "source urls" in changes.lower() and "output subfolders" in changes.lower() and "make lint" in changes and "make test" in changes and "make build" in changes,
             "CHANGES must record updater timeout and generated hosts baseline updates",
             failures)
+    require("absolute Makefile path" in readme and "any working directory" in readme,
+            "README must document location-independent Make verification",
+            failures)
+    require("Make verification target derive the checkout root" in changes and
+            "external directories" in changes,
+            "CHANGES must record location-independent Make verification",
+            failures)
+    credential_safe_guidance = "credential-bearing source URLs are never reproduced in refresh logs"
+    normalized_guidance = [
+        " ".join(document.lower().split())
+        for document in [readme, security, vision, changes, read("AGENTS.md")]
+    ]
+    require(all(credential_safe_guidance.lower() in document
+                for document in normalized_guidance),
+            "project guidance must document credential-safe source refresh logging",
+            failures)
+    network_error_guidance = "source fetch exceptions are reported generically without URL, query, or exception details"
+    require(all(network_error_guidance.lower() in document
+                for document in normalized_guidance),
+            "project guidance must document source-fetch exception redaction",
+            failures)
     require("__pycache__/" in gitignore and "*.py[cod]" in gitignore and ".env" in gitignore,
             ".gitignore must exclude Python caches and local environment files",
             failures)
@@ -716,8 +1269,273 @@ jobs:
     require("status: completed" in ci_policy_plan and "hostile workflow mutations" in ci_policy_plan.lower(),
             "CI policy plan must record completed mutation verification",
             failures)
-    require("status: completed" in atomic_refresh_plan and "temporary-file" in atomic_refresh_plan.lower(),
-            "atomic source refresh plan must record completed mutation verification",
+    require("status: completed" in network_error_redaction_plan and
+            "all four make gates" in network_error_redaction_plan.lower() and
+            "absolute makefile check" in network_error_redaction_plan.lower() and
+            "python3 -m py_compile updatefile.py scripts/check-baseline.py" in network_error_redaction_plan.lower() and
+            "four isolated hostile mutations" in network_error_redaction_plan.lower() and
+            "git diff --check" in network_error_redaction_plan.lower(),
+            "network error redaction plan must record completed validation evidence",
+            failures)
+    require("valid IPv4 or IPv6 literal" in readme and "injected lines" in readme and
+            "strict IPv4 or IPv6 literal" in security and "line injection" in security and
+            "strict IPv4 or IPv6 literal" in vision and
+            "strict IPv4 or IPv6 literal" in changes and "line injection" in changes,
+            "Docs must record strict target-IP validation",
+            failures)
+    require("symlinks must resolve inside the repository tree" in readme and
+            "external symbolic links" in security and
+            "including symlink resolution" in vision and
+            "symbolic links resolve outside" in changes,
+            "Docs must record symlink-aware output containment",
+            failures)
+    output_target_guidance = "Alternate --output generation removes or backs up only the selected hosts file and leaves the repository-root hosts data unchanged."
+    require(all(output_target_guidance in document for document in
+                [readme, security, vision, changes, read("AGENTS.md")]),
+            "Docs must record selected output cleanup ownership",
+            failures)
+    require("`readmeData.json` updates are atomically replaced" in readme and
+            "atomic metadata replacement" in security.lower() and
+            "`readmeData.json` atomically" in vision and
+            "`readmeData.json` writes atomic" in changes,
+            "Docs must record atomic README metadata replacement",
+            failures)
+    unique_backup_guidance = "Backup allocation is exclusive, so same-second publications preserve distinct recovery copies."
+    require(all(unique_backup_guidance in document for document in
+                [agents, readme, security, vision, changes]),
+            "Docs must record collision-safe hosts backup allocation",
+            failures)
+    atomic_refresh_statuses = re.findall(
+        r"^status: .+$", atomic_refresh_plan, flags=re.MULTILINE
+    )
+    atomic_refresh_sections = atomic_refresh_plan.split("## Verification Completed\n", 1)
+    atomic_refresh_verification = (
+        atomic_refresh_sections[1] if len(atomic_refresh_sections) == 2 else ""
+    )
+    atomic_refresh_required_evidence = (
+        "All four Make gates",
+        "push run `27394221497`",
+        "pull-request run `27394225763`",
+        "push run `27394241606`",
+        "CodeQL setup run `27402322510`",
+        "Mutations restoring direct destination writes",
+    )
+    require(atomic_refresh_statuses == ["status: completed"]
+            and all(item in atomic_refresh_verification for item in atomic_refresh_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b", atomic_refresh_verification, re.IGNORECASE) is None,
+            "atomic source refresh plan must record completed status and actual verification",
+            failures)
+    target_ip_statuses = re.findall(
+        r"^status: .+$", target_ip_plan, flags=re.MULTILINE
+    )
+    target_ip_sections = target_ip_plan.split("## Verification Completed\n", 1)
+    target_ip_verification = (
+        target_ip_sections[1] if len(target_ip_sections) == 2 else ""
+    )
+    target_ip_required_evidence = (
+        "All four Make gates",
+        "python3 -m py_compile updateFile.py scripts/check-baseline.py",
+        "PYTHONDONTWRITEBYTECODE=1 python3 updateFile.py --help",
+        "git diff --check",
+        "Seven isolated hostile mutations",
+    )
+    require(target_ip_statuses == ["status: completed"]
+            and all(item in target_ip_verification for item in target_ip_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b", target_ip_verification, re.IGNORECASE) is None,
+            "target IP validation plan must record completed status and actual verification",
+            failures)
+    output_symlink_statuses = re.findall(
+        r"^status: .+$", output_symlink_plan, flags=re.MULTILINE
+    )
+    output_symlink_sections = output_symlink_plan.split(
+        "## Verification Completed\n", 1
+    )
+    output_symlink_verification = (
+        output_symlink_sections[1]
+        if len(output_symlink_sections) == 2 else ""
+    )
+    output_symlink_required_evidence = (
+        "All four Make gates",
+        "python3 -m py_compile updateFile.py scripts/check-baseline.py",
+        "PYTHONDONTWRITEBYTECODE=1 python3 updateFile.py --help",
+        "git diff --check",
+        "Five isolated hostile mutations",
+        "Hosted Python matrix and CodeQL evidence",
+    )
+    require(output_symlink_statuses == ["status: completed"]
+            and all(item in output_symlink_verification
+                    for item in output_symlink_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b",
+                          output_symlink_verification,
+                          re.IGNORECASE) is None,
+            "output symlink containment plan must record completed status and actual local verification",
+            failures)
+    atomic_readme_data_statuses = re.findall(
+        r"^status: .+$", atomic_readme_data_plan, flags=re.MULTILINE
+    )
+    atomic_readme_data_sections = atomic_readme_data_plan.split(
+        "## Verification Completed\n", 1
+    )
+    atomic_readme_data_verification = (
+        atomic_readme_data_sections[1]
+        if len(atomic_readme_data_sections) == 2 else ""
+    )
+    atomic_readme_data_required_evidence = (
+        "All four Make gates",
+        "python3 -m py_compile updateFile.py scripts/check-baseline.py",
+        "PYTHONDONTWRITEBYTECODE=1 python3 updateFile.py --help",
+        "git diff --check",
+        "Five isolated hostile mutations",
+    )
+    require(atomic_readme_data_statuses == ["status: completed"]
+            and all(item in atomic_readme_data_verification
+                    for item in atomic_readme_data_required_evidence)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b",
+                          atomic_readme_data_verification,
+                          re.IGNORECASE) is None,
+            "atomic README metadata plan must record completed status and actual local verification",
+            failures)
+    location_independent_statuses = re.findall(
+        r"^status: .+$", location_independent_make_plan, flags=re.MULTILINE
+    )
+    location_independent_sections = location_independent_make_plan.split(
+        "## Verification Completed\n", 1
+    )
+    location_independent_verification = (
+        location_independent_sections[1]
+        if len(location_independent_sections) == 2 else ""
+    )
+    location_independent_required = (
+        "Root and external-directory Make gates passed",
+        "root-derivation mutation failed",
+        "checker-invocation mutation failed",
+        "plan-status mutation failed",
+        "plan-evidence mutation failed",
+        "documentation mutation failed",
+    )
+    require(location_independent_statuses == ["status: completed"]
+            and all(item in location_independent_verification
+                    for item in location_independent_required)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b",
+                          location_independent_verification,
+                          re.IGNORECASE) is None,
+            "location-independent Make plan must record completed status and actual verification",
+            failures)
+    credential_logging_statuses = re.findall(
+        r"^status: .+$", credential_safe_refresh_logging_plan,
+        flags=re.MULTILINE
+    )
+    credential_logging_sections = credential_safe_refresh_logging_plan.split(
+        "## Verification Completed\n", 1
+    )
+    credential_logging_verification = (
+        credential_logging_sections[1]
+        if len(credential_logging_sections) == 2 else ""
+    )
+    credential_logging_required = (
+        "All four Make gates",
+        "absolute Makefile check",
+        "python3 -m py_compile updateFile.py scripts/check-baseline.py",
+        "Two isolated hostile mutations",
+        "git diff --check",
+    )
+    require(credential_logging_statuses == ["status: completed"]
+            and all(item in credential_logging_verification
+                    for item in credential_logging_required)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b",
+                          credential_logging_verification,
+                          re.IGNORECASE) is None,
+            "credential-safe refresh logging plan must record completed status and actual verification",
+            failures)
+    output_target_statuses = re.findall(
+        r"^status: .+$", output_target_plan, flags=re.MULTILINE
+    )
+    output_target_sections = output_target_plan.split(
+        "## Verification Completed\n", 1
+    )
+    output_target_verification = (
+        output_target_sections[1] if len(output_target_sections) == 2 else ""
+    )
+    output_target_required = (
+        "All four Make gates passed",
+        "absolute Makefile passed from `/tmp`",
+        "python3 -m py_compile updateFile.py scripts/check-baseline.py",
+        "hostile mutations were rejected",
+        "changed-line credential scan passed",
+        "hosted pull-request and security-alert snapshot",
+    )
+    require(output_target_statuses == ["status: completed"]
+            and all(item in output_target_verification
+                    for item in output_target_required)
+            and re.search(r"\b(?:pending|todo|tbd|not run)\b",
+                          output_target_verification,
+                          re.IGNORECASE) is None,
+            "selected output preservation plan must record completed verification",
+            failures)
+    atomic_output_guidance = (
+        "Generated hosts outputs preserve the last good file until atomic publication."
+    )
+    for document_name, document in (
+            ("AGENTS.md", agents),
+            ("README.md", readme),
+            ("SECURITY.md", security),
+            ("VISION.md", vision),
+            ("CHANGES.md", changes)):
+        require(atomic_output_guidance in document,
+                f"{document_name} must document atomic hosts output publication",
+                failures)
+    atomic_output_statuses = re.findall(
+        r"^Status: .+$", atomic_output_plan, flags=re.MULTILINE
+    )
+    atomic_output_sections = atomic_output_plan.split(
+        "## Verification Completed\n", 1
+    )
+    atomic_output_verification = (
+        atomic_output_sections[1] if len(atomic_output_sections) == 2 else ""
+    )
+    atomic_output_required = (
+        "All four Make gates passed",
+        "absolute Makefile passed from `/tmp`",
+        "python3 -m py_compile updateFile.py scripts/check-baseline.py",
+        "hostile mutations were rejected",
+        "changed-line credential scan passed",
+        "No live provider download, privileged hosts replacement, or DNS flush was executed",
+    )
+    require(atomic_output_statuses == ["Status: Completed"]
+            and all(item in atomic_output_verification
+                    for item in atomic_output_required)
+            and re.search(r"\b(?:pending|todo|tbd)\b",
+                          atomic_output_verification,
+                          re.IGNORECASE) is None,
+            "atomic output publication plan must record completed verification",
+            failures)
+    unique_backup_statuses = re.findall(
+        r"^status: .+$", unique_backup_plan, flags=re.MULTILINE
+    )
+    unique_backup_sections = unique_backup_plan.split(
+        "## Verification Completed\n", 1
+    )
+    unique_backup_verification = (
+        unique_backup_sections[1] if len(unique_backup_sections) == 2 else ""
+    )
+    unique_backup_required = (
+        "All four Make gates passed",
+        "external-directory absolute Makefile check passed from `/tmp`",
+        "python3 -m py_compile updateFile.py scripts/check-baseline.py",
+        "python3 updateFile.py --help",
+        "Two publications under one fixed timestamp produced distinct backups",
+        "Simulated backup-copy failure preserved the destination",
+        "Six isolated hostile mutations were rejected",
+        "git diff --check",
+        "No live provider download, privileged hosts replacement, or DNS flush was",
+    )
+    require(unique_backup_statuses == ["status: completed"] and
+            all(item in unique_backup_verification
+                    for item in unique_backup_required) and
+            re.search(r"\b(?:pending|todo|tbd|not run)\b",
+                      unique_backup_verification,
+                      re.IGNORECASE) is None,
+            "unique hosts backup plan must record completed verification",
             failures)
 
     if failures:
