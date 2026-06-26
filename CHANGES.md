@@ -1,5 +1,19 @@
 # Changes
 
+## 2026-06-26 11:41 PDT - P1 - Preserve rules whose comments mention IPv6
+
+- **Summary:** Parse hosts fields before deciding whether a source line is an
+  IPv6 loopback record, and normalize retained comments to one output line.
+- **Files:** Updated `updateFile.py`, focused parser tests, repository guidance,
+  and the implementation plan.
+- **Tests:** Added a failing regression for an IPv4 block rule whose comment
+  mentions `::1`; the focused and complete updater suites pass after the fix.
+- **Findings:** The old raw substring check silently dropped a valid domain;
+  removing it also exposed embedded source newlines in preserved comments.
+- **Blockers:** No live source refresh or privileged hosts replacement ran.
+- **Next action:** Require hosted Python matrices on the exact PR head, attempt
+  Codex review once, merge only the green SHA, and verify post-merge CI.
+
 ## 2026-06-19
 
 - Preserved every valid hostname alias on multi-host source lines while

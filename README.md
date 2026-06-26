@@ -97,6 +97,8 @@ through the exclusively allocated file descriptor rather than reopening a
 raceable path.
 Source lines containing multiple hostname aliases preserve each valid alias;
 deduplication and exclusions are applied to each hostname independently.
+IPv4 block rules remain valid when trailing comments mention `::1`, and
+retained comments are normalized to one generated output line.
 The `--ip` target must be a valid IPv4 or IPv6 literal and is rejected before
 source discovery or output generation if it contains whitespace, a hostname,
 an out-of-range address, or injected lines.

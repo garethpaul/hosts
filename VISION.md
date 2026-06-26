@@ -38,6 +38,8 @@ Priority:
 - Ensure source fetch exceptions are reported generically without URL, query,
   or exception details
 - Validate `--ip` as a strict IPv4 or IPv6 literal before source or output work
+- Preserve valid IPv4 rules when comments mention IPv6 loopback, with retained
+  comments confined to one generated line
 
 Next priorities:
 

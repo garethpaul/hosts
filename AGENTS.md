@@ -48,6 +48,7 @@ Backup allocation is exclusive, so same-second publications preserve distinct re
 
 - No required secret or credential file was identified in the repository scan. If you add integrations later, keep secrets out of git.
 - Treat false positives as security and reliability issues: an overbroad entry can block account recovery, updates, payments, or other important services.
+- Treat false negatives as correctness issues: parse rule fields before using address-like text from comments to discard a line.
 - Source URLs require HTTP(S) schemes and hosts before the updater fetches them.
 - `updateFile.py --replace` and DNS flush behavior can affect the local machine's `/etc/hosts`; review generated output and keep backups before privileged replacement.
 - See `SECURITY.md` for vulnerability reporting and safe research guidance.

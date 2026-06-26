@@ -174,6 +174,31 @@ class ParsingBoundaryTests(unittest.TestCase):
                 "0.0.0.0 first.example\n0.0.0.0 second.example\n")
             self.assertEqual(self.updater.settings["numberofrules"], 2)
 
+    def test_ipv6_loopback_in_comment_does_not_drop_ipv4_rule(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            self.updater.settings = {
+                "numberofrules": 0,
+                "whitelistfile": str(directory / "missing-whitelist"),
+                "exclusions": [],
+                "targetip": "0.0.0.0",
+                "keepdomaincomments": True,
+            }
+            merge_file = tempfile.NamedTemporaryFile(mode="w+b")
+            merge_file.write(
+                b"0.0.0.0 ads.example # IPv6 mirror uses ::1\n")
+            final_file = tempfile.NamedTemporaryFile(mode="w+b")
+
+            self.updater.remove_dups_and_excl(merge_file, [], final_file)
+            final_file.seek(0)
+            output = final_file.read().decode("utf-8")
+            final_file.close()
+
+            self.assertEqual(
+                output,
+                "0.0.0.0 ads.example # IPv6 mirror uses ::1\n")
+            self.assertEqual(self.updater.settings["numberofrules"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

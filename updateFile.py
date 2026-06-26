@@ -672,9 +672,6 @@ def remove_dups_and_excl(merge_file, exclusion_regexes, final_file):
         if line[0] == "#" or re.match(r'^\s*$', line[0]):
             write_data(final_file, line)
             continue
-        if "::1" in line:
-            continue
-
         normalized_rules = normalize_rules(
             line, target_ip=settings["targetip"],
             keep_domain_comments=settings["keepdomaincomments"])
@@ -731,6 +728,7 @@ def normalize_rules(rule, target_ip, keep_domain_comments):
     """Normalize every valid hostname alias in one hosts-file rule."""
 
     uncommented_rule, separator, comment = rule.partition("#")
+    comment = comment.strip()
     fields = uncommented_rule.split()
     if (len(fields) < 2 or
             re.match(r'^(\d{1,3}\.){3}\d{1,3}$', fields[0]) is None):
@@ -746,7 +744,7 @@ def normalize_rules(rule, target_ip, keep_domain_comments):
 
         normalized_rule = "%s %s" % (target_ip, hostname)
         if separator and comment and keep_domain_comments:
-            normalized_rule += " #" + comment
+            normalized_rule += " # " + comment
         normalized_rules.append((hostname, normalized_rule + "\n"))
 
     return normalized_rules
