@@ -60,6 +60,8 @@ Generated hosts outputs preserve the last good file until atomic publication.
 - The generated-rule `--ip` target must be a strict IPv4 or IPv6 literal;
   whitespace, hostnames, malformed addresses, and line injection are rejected
   before source refresh or file generation.
+- Parse the address field before filtering IPv6 loopback records; `::1` inside
+  a comment must not suppress an otherwise valid block rule.
 - `make check` runs the static baseline for hosts syntax, generated counts, duplicate scope, JSON metadata, and Python updater syntax without network access or local hosts replacement. It also checks HTTPS source URLs, host validation, timeouts, response cleanup, and atomic source refreshes.
 - Hosted validation is read-only, uses immutable actions without persisted
   checkout credentials, and runs no network-fetch or privileged updater path.
