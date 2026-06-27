@@ -16,7 +16,7 @@ be able to load the repository Makefile without first changing directories.
 
 ## Scope
 
-1. Derive the repository root from an encoded `MAKEFILE_LIST` that preserves spaces.
+1. Derive the repository root from the single loaded Makefile path while preserving spaces.
 2. Invoke the Python baseline checker through its rooted path.
 3. Add completed-plan, external-run, recursive spaced-path, guidance, and hostile-mutation contracts.
 4. Preserve updater behavior, provider policy, output containment, atomic
@@ -39,9 +39,8 @@ caller-relative recipe; no output files or system hosts state are modified.
 
 ## Work Completed
 
-- Derived `ROOT` from the loaded Makefile and invoked the checker through its
-  absolute repository path while preserving spaces and command-line override
-  resistance.
+- Derived `ROOT` from the sole loaded Makefile and invoked the checker through
+  its absolute repository path while rejecting ambiguous Makefile inputs.
 - Added a recursive-safe full-baseline regression against a copied checkout
   whose absolute path contains spaces.
 - Added rooted-recipe, completed-plan, external-run, and synchronized-guidance
@@ -53,6 +52,7 @@ caller-relative recipe; no output files or system hosts state are modified.
 - Root and external-directory Make gates passed for `lint`, `test`, `build`,
   and `check`; every target exercised the complete generated-data baseline.
 - GNU Make 4.2 and 4.4 space-containing absolute Makefile paths passed.
+- Preloaded, overridden, additional, and recipe-replacement Makefiles failed closed.
 - The root-derivation mutation failed.
 - The checker-invocation mutation failed.
 - The plan-status mutation failed.

@@ -1139,15 +1139,16 @@ def main():
     output_target_plan = OUTPUT_TARGET_PLAN.read_text(encoding="utf-8") if OUTPUT_TARGET_PLAN.exists() else ""
     atomic_output_plan = ATOMIC_OUTPUT_PLAN.read_text(encoding="utf-8") if ATOMIC_OUTPUT_PLAN.exists() else ""
     unique_backup_plan = UNIQUE_BACKUP_PLAN.read_text(encoding="utf-8") if UNIQUE_BACKUP_PLAN.exists() else ""
-    require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
+    require(".PHONY: __repository-make-authority build check lint test" in makefile and "lint test build:: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
             failures)
-    require("override makefile_space := __HOSTS_MAKEFILE_SPACE__" in makefile and
-            "$(subst $(space),$(makefile_space),$(MAKEFILE_LIST))" in makefile and
-            "$(subst $(makefile_space),$(space),$(abspath $(dir $(lastword $(encoded_makefile_list)))))" in makefile and
+    require("MAKEFILES must be empty" in makefile and
+            "MAKEFILE_LIST must not be overridden" in makefile and
+            "repository Makefile must be loaded alone" in makefile and
+            ".SECONDEXPANSION:" in makefile and
             '@python3 "$(ROOT)/scripts/check-baseline.py"' in makefile and
             '@python3 "$(ROOT)/scripts/test-make-spaced-path.py"' in makefile,
-            "Makefile must preserve spaces while deriving and testing the loaded repository root",
+            "Makefile must preserve spaces and reject ambiguous verification roots",
             failures)
     expected_workflow = """name: Check
 
