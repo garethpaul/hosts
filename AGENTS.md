@@ -19,6 +19,7 @@ source lists.
 - Lint/static checks: `make lint`
 - Tests: `make test`
 - Build gate: `make build`
+- Make gates support absolute checkout paths containing spaces; preserve the single-Makefile authority boundary and recursive regression.
 - If a command above skips because a platform toolchain is missing, verify on a machine with that SDK before claiming platform behavior is tested.
 
 ## Coding conventions

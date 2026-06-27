@@ -955,6 +955,7 @@ def main():
         "hosts",
         "readmeData.json",
         "updateFile.py",
+        "scripts/test-make-spaced-path.py",
         "docs/readme-overview.svg",
         "docs/plans/2026-06-08-hosts-baseline.md",
         "docs/plans/2026-06-09-make-gate-aliases.md",
@@ -1138,12 +1139,16 @@ def main():
     output_target_plan = OUTPUT_TARGET_PLAN.read_text(encoding="utf-8") if OUTPUT_TARGET_PLAN.exists() else ""
     atomic_output_plan = ATOMIC_OUTPUT_PLAN.read_text(encoding="utf-8") if ATOMIC_OUTPUT_PLAN.exists() else ""
     unique_backup_plan = UNIQUE_BACKUP_PLAN.read_text(encoding="utf-8") if UNIQUE_BACKUP_PLAN.exists() else ""
-    require(".PHONY: build check lint test" in makefile and "lint test build: check" in makefile,
+    require(".PHONY: __repository-make-authority build check lint test" in makefile and "lint test build:: check" in makefile,
             "Makefile must expose lint, test, and build aliases for the local baseline",
             failures)
-    require("override ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))" in makefile and
-            '@python3 "$(ROOT)/scripts/check-baseline.py"' in makefile,
-            "Makefile must invoke the checker through the loaded repository root",
+    require("MAKEFILES must be empty" in makefile and
+            "MAKEFILE_LIST must not be overridden" in makefile and
+            "repository Makefile must be loaded alone" in makefile and
+            ".SECONDEXPANSION:" in makefile and
+            '@python3 "$(ROOT)/scripts/check-baseline.py"' in makefile and
+            '@python3 "$(ROOT)/scripts/test-make-spaced-path.py"' in makefile,
+            "Makefile must preserve spaces and reject ambiguous verification roots",
             failures)
     expected_workflow = """name: Check
 
@@ -1200,11 +1205,12 @@ jobs:
     require("GitHub Actions" in changes and "https source" in changes.lower() and "timeout" in changes.lower() and "generated hosts" in changes.lower() and "exclusion" in changes.lower() and "plain domains" in changes.lower() and "lowercase" in changes.lower() and "response" in changes.lower() and "source metadata file handles" in changes.lower() and "source output file handles" in changes.lower() and "source urls" in changes.lower() and "output subfolders" in changes.lower() and "make lint" in changes and "make test" in changes and "make build" in changes,
             "CHANGES must record updater timeout and generated hosts baseline updates",
             failures)
-    require("absolute Makefile path" in readme and "any working directory" in readme,
+    require("absolute Makefile path" in readme and "any working directory" in readme and
+            "paths containing spaces" in readme,
             "README must document location-independent Make verification",
             failures)
     require("Make verification target derive the checkout root" in changes and
-            "external directories" in changes,
+            "external directories" in changes and "roots containing spaces" in changes,
             "CHANGES must record location-independent Make verification",
             failures)
     credential_safe_guidance = "credential-bearing source URLs are never reproduced in refresh logs"
@@ -1407,6 +1413,7 @@ jobs:
     )
     location_independent_required = (
         "Root and external-directory Make gates passed",
+        "space-containing absolute Makefile paths passed",
         "root-derivation mutation failed",
         "checker-invocation mutation failed",
         "plan-status mutation failed",

@@ -1,5 +1,8 @@
 # Changes
 
+- Preserved absolute Makefile roots containing spaces and added a recursive-safe full-baseline regression.
+- Rejected ambiguous Makefile inputs so later recipes cannot replace verification.
+
 ## 2026-06-26 11:41 PDT - P1 - Preserve rules whose comments mention IPv6
 
 - **Summary:** Parse hosts fields before deciding whether a source line is an
