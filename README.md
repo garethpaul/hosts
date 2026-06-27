@@ -169,7 +169,8 @@ Generated hosts outputs preserve the last good file until atomic publication.
 - See `docs/plans/2026-06-09-make-gate-aliases.md` for the local gate alias guardrail.
 - Run `make lint`, `make test`, `make build`, and `make check` before pushing changes to `hosts`, `readmeData.json`, updater code, or source metadata.
 - Every Make verification target derives the checkout root from the loaded
-  Makefile, so an absolute Makefile path works from any working directory.
+  Makefile, so an absolute Makefile path works from any working directory,
+  including checkout paths containing spaces.
 
 ## Contributing
 

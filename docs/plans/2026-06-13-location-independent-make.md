@@ -6,7 +6,8 @@ status: completed
 
 The maintained baseline passes from the checkout, but invoking the absolute
 Makefile from another directory resolves `scripts/check-baseline.py` relative
-to the caller.
+to the caller. GNU Make also splits a loaded absolute Makefile path containing
+spaces before the repository root is derived.
 
 ## Priority
 
@@ -15,9 +16,9 @@ be able to load the repository Makefile without first changing directories.
 
 ## Scope
 
-1. Derive the repository root from `MAKEFILE_LIST`.
+1. Derive the repository root from an encoded `MAKEFILE_LIST` that preserves spaces.
 2. Invoke the Python baseline checker through its rooted path.
-3. Add completed-plan, external-run, guidance, and hostile-mutation contracts.
+3. Add completed-plan, external-run, recursive spaced-path, guidance, and hostile-mutation contracts.
 4. Preserve updater behavior, provider policy, output containment, atomic
    metadata replacement, dependencies, and workflow files.
 
@@ -39,7 +40,10 @@ caller-relative recipe; no output files or system hosts state are modified.
 ## Work Completed
 
 - Derived `ROOT` from the loaded Makefile and invoked the checker through its
-  absolute repository path.
+  absolute repository path while preserving spaces and command-line override
+  resistance.
+- Added a recursive-safe full-baseline regression against a copied checkout
+  whose absolute path contains spaces.
 - Added rooted-recipe, completed-plan, external-run, and synchronized-guidance
   contracts.
 - Preserved updater behavior, generated data, dependencies, and workflows.
@@ -48,6 +52,7 @@ caller-relative recipe; no output files or system hosts state are modified.
 
 - Root and external-directory Make gates passed for `lint`, `test`, `build`,
   and `check`; every target exercised the complete generated-data baseline.
+- GNU Make 4.2 and 4.4 space-containing absolute Makefile paths passed.
 - The root-derivation mutation failed.
 - The checker-invocation mutation failed.
 - The plan-status mutation failed.
